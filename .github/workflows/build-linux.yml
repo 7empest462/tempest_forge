@@ -1,0 +1,47 @@
+name: Build for Steam Deck (Linux)
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch: # Allows you to manually trigger a build from the GitHub UI
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Install Linux/Bevy Dependencies (ALSA, Udev, Wayland, X11)
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y g++ pkg-config libx11-dev libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev
+
+    - name: Set up Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: stable
+        targets: x86_64-unknown-linux-gnu
+
+    - name: Cache Rust dependencies
+      uses: Swatinem/rust-cache@v2
+
+    - name: Build Release
+      run: cargo build --release
+
+    - name: Prepare Game Folder
+      run: |
+        mkdir -p tempest_forge_linux
+        cp target/release/tempest_forge tempest_forge_linux/
+        # The assets folder must accompany the executable for textures and sounds to load
+        cp -r assets tempest_forge_linux/
+
+    - name: Upload Steam Deck Build
+      uses: actions/upload-artifact@v4
+      with:
+        name: TempestForge-Linux-SteamDeck
+        path: tempest_forge_linux/
