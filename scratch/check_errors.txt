@@ -1,0 +1,22 @@
+    Checking tempest_forge v0.1.0 (/Volumes/Corsair_Lab/Home/Projects/tempest_forge)
+error[E0425]: cannot find value `params` in this scope
+   --> src/player/interaction.rs:604:54
+    |
+604 |                 let player_pos = if let Ok((t, _)) = params.player_query.get_single() { t.translation } else { Vec3::ZERO };
+    |                                                      ^^^^^^ not found in this scope
+
+error[E0599]: no method named `get_single` found for struct `bevy::prelude::Query<'world, 'state, D, F>` in the current scope
+   --> src/player/interaction.rs:704:66
+    |
+704 |     let (camera, camera_transform) = if let Ok(c) = camera_query.get_single() { c } else { return; };
+    |                                                                  ^^^^^^^^^^
+    |
+help: there is a method `single` with a similar name
+    |
+704 -     let (camera, camera_transform) = if let Ok(c) = camera_query.get_single() { c } else { return; };
+704 +     let (camera, camera_transform) = if let Ok(c) = camera_query.single() { c } else { return; };
+    |
+
+Some errors have detailed explanations: E0425, E0599.
+For more information about an error, try `rustc --explain E0425`.
+error: could not compile `tempest_forge` (bin "tempest_forge") due to 2 previous errors
