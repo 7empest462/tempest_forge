@@ -33,15 +33,17 @@ pub fn draw_pause_menu(
                     ui.heading("Game Controls");
                     ui.separator();
 
-                    ui.label("WASD - Move forward/left/back/right");
-                    ui.label("SPACE - Jump");
-                    ui.label("SHIFT - Sprint");
-                    ui.label("Left Click - Mine blocks");
-                    ui.label("Right Click - Place blocks");
-                    ui.label("I - Toggle Inventory");
-                    ui.label("ESC - Toggle Pause Menu");
-                    ui.label("C - Switch Camera Mode");
-                    ui.label("F - Toggle Flight");
+                    ui.label("L-Stick - Move  |  R-Stick - Look");
+                    ui.label("A Button - Jump  |  B Button - Crouch");
+                    ui.label("L3 - Sprint");
+                    ui.label("R2 - Mine Blocks / Fire Weapon");
+                    ui.label("L2 - Place Blocks");
+                    ui.label("D-Pad Down - Toggle Inventory");
+                    ui.label("Start - Toggle Pause Menu");
+                    ui.label("Select - Switch Camera Mode");
+                    ui.label("X Button - Toggle Flight");
+                    ui.label("Y Button - Toggle Mech Suit");
+                    ui.label("D-Pad L/U/R - Equip Tools");
                 });
             });
 

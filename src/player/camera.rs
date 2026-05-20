@@ -437,6 +437,7 @@ fn player_move(
     water_query: Query<(&WaterSimData, &Transform), (With<WaterMesh>, Without<Player>)>,
     mut commands: Commands,
     mut water_audio: ResMut<WaterAudio>,
+    gamepads: Query<&Gamepad>,
 ) {
     if ui_state.show_inventory || ui_state.show_pause_menu {
         return;
@@ -456,6 +457,22 @@ fn player_move(
     if keys.pressed(KeyCode::KeyA) { move_dir -= right; }
     if keys.pressed(KeyCode::KeyD) { move_dir += right; }
     
+    let mut gamepad_sprint = false;
+    let mut gamepad_jump = false;
+    let mut gamepad_dive = false;
+    
+    for gamepad in gamepads.iter() {
+        let lx = gamepad.get(GamepadAxis::LeftStickX).unwrap_or(0.0);
+        let ly = gamepad.get(GamepadAxis::LeftStickY).unwrap_or(0.0);
+        if lx.abs() > 0.1 || ly.abs() > 0.1 {
+            move_dir += forward * ly; // Y is forward
+            move_dir += right * lx;
+        }
+        if gamepad.pressed(GamepadButton::LeftThumb) { gamepad_sprint = true; }
+        if gamepad.pressed(GamepadButton::South) { gamepad_jump = true; }
+        if gamepad.pressed(GamepadButton::East) { gamepad_dive = true; }
+    }
+    
     let mut speed = if physics.flying { 20.0 } else { 8.0 };
     let mut in_water = false;
     
@@ -471,7 +488,7 @@ fn player_move(
     }
     physics.swimming = in_water;
 
-    if keys.pressed(KeyCode::ShiftLeft) {
+    if keys.pressed(KeyCode::ShiftLeft) || gamepad_sprint {
         speed *= 2.0;
     }
 
@@ -503,15 +520,15 @@ fn player_move(
     
     // Vertical movement & Flight Controls
     if physics.flying {
-        if keys.pressed(KeyCode::Space) {
+        if keys.pressed(KeyCode::Space) || gamepad_jump {
             physics.velocity.y = 10.0;
-        } else if keys.pressed(KeyCode::ControlLeft) {
+        } else if keys.pressed(KeyCode::ControlLeft) || gamepad_dive {
             physics.velocity.y = -10.0;
         } else {
             physics.velocity.y = 0.0; // Hover in place
         }
     } else {
-        if keys.pressed(KeyCode::Space) {
+        if keys.pressed(KeyCode::Space) || gamepad_jump {
             if in_water {
                 physics.velocity.y = 4.0; // Swim up
             } else if physics.grounded {
@@ -519,7 +536,7 @@ fn player_move(
                 physics.grounded = false;
             }
         }
-        if keys.pressed(KeyCode::ControlLeft) && in_water {
+        if (keys.pressed(KeyCode::ControlLeft) || gamepad_dive) && in_water {
             physics.velocity.y = -4.0; // Dive down
         }
     }
@@ -542,7 +559,7 @@ fn player_move(
         let dt = time.delta_secs().min(0.05); // Tighter DT for stability
         if in_water {
             // Sinking behavior: if not swimming up/down, sink slowly
-            if !keys.pressed(KeyCode::Space) && !keys.pressed(KeyCode::ControlLeft) {
+            if !keys.pressed(KeyCode::Space) && !keys.pressed(KeyCode::ControlLeft) && !gamepad_jump && !gamepad_dive {
                 physics.velocity.y -= 5.0 * dt; // Sink
                 physics.velocity.y = physics.velocity.y.max(-2.5); // Max sink speed
             }
@@ -653,6 +670,8 @@ fn player_look(
     mut query: Query<&mut Transform, With<Player>>,
     mut pivot_query: Query<&mut Transform, (With<CameraPivot>, Without<Player>)>,
     ui_state: Res<UiState>,
+    gamepads: Query<&Gamepad>,
+    time: Res<Time>,
 ) {
     if ui_state.show_inventory || ui_state.show_pause_menu {
         return;
@@ -664,6 +683,19 @@ fn player_look(
     for event in mouse_events.read() {
         mouse_delta += event.delta;
     }
+
+    let mut gamepad_delta = Vec2::ZERO;
+    for gamepad in gamepads.iter() {
+        let rx = gamepad.get(GamepadAxis::RightStickX).unwrap_or(0.0);
+        let ry = gamepad.get(GamepadAxis::RightStickY).unwrap_or(0.0);
+        if rx.abs() > 0.05 || ry.abs() > 0.05 {
+            // Apply scale logic for right stick aiming
+            gamepad_delta.x += rx * 2500.0 * time.delta_secs(); 
+            // Y is inverted between gamepad output (up is +) and mouse movement (up is -)
+            gamepad_delta.y -= ry * 2500.0 * time.delta_secs();
+        }
+    }
+    mouse_delta += gamepad_delta;
 
     if mouse_delta != Vec2::ZERO {
         let sensitivity = 0.002;
@@ -681,20 +713,25 @@ fn player_look(
 fn mech_controls(
     keys: Res<ButtonInput<KeyCode>>,
     mut query: Query<&mut MechSuit, With<Player>>,
+    gamepads: Query<&Gamepad>,
 ) {
     let Ok(mut mech) = query.single_mut() else { return };
-    if keys.just_pressed(KeyCode::KeyM) {
-        mech.active = !mech.active;
+    let mut toggle = keys.just_pressed(KeyCode::KeyM);
+    let mut to_drill = keys.just_pressed(KeyCode::Digit1);
+    let mut to_axe = keys.just_pressed(KeyCode::Digit2);
+    let mut to_laser = keys.just_pressed(KeyCode::Digit3);
+    
+    for gamepad in gamepads.iter() {
+        if gamepad.just_pressed(GamepadButton::North) { toggle = true; }
+        if gamepad.just_pressed(GamepadButton::DPadLeft) { to_drill = true; }
+        if gamepad.just_pressed(GamepadButton::DPadUp) { to_axe = true; }
+        if gamepad.just_pressed(GamepadButton::DPadRight) { to_laser = true; }
     }
-    if keys.just_pressed(KeyCode::Digit1) {
-        mech.active_tool = MechTool::Drill;
-    }
-    if keys.just_pressed(KeyCode::Digit2) {
-        mech.active_tool = MechTool::Axe;
-    }
-    if keys.just_pressed(KeyCode::Digit3) {
-        mech.active_tool = MechTool::Laser;
-    }
+
+    if toggle { mech.active = !mech.active; }
+    if to_drill { mech.active_tool = MechTool::Drill; }
+    if to_axe { mech.active_tool = MechTool::Axe; }
+    if to_laser { mech.active_tool = MechTool::Laser; }
 }
 
 fn camera_toggle(
@@ -704,12 +741,22 @@ fn camera_toggle(
     mut hit_events: MessageReader<crate::player::combat::LaserHitEvent>,
     time: Res<Time>,
     mut shake_intensity: Local<f32>,
+    gamepads: Query<&Gamepad>,
 ) {
     let Ok((mut mode, mut physics)) = query.single_mut() else { return };
     let Ok((mut cam_transform, _proj)) = camera_query.single_mut() else { return };
     
+    let mut toggle_view = keys.just_pressed(KeyCode::KeyV);
+    let toggle_front = keys.just_pressed(KeyCode::KeyC);
+    let mut toggle_flight = keys.just_pressed(KeyCode::KeyF);
+    
+    for gamepad in gamepads.iter() {
+        if gamepad.just_pressed(GamepadButton::Select) { toggle_view = true; }
+        if gamepad.just_pressed(GamepadButton::West) { toggle_flight = true; }
+    }
+
     // Cycle toggle for V: Back View -> First Person
-    if keys.just_pressed(KeyCode::KeyV) {
+    if toggle_view {
         if *mode == CameraMode::ThirdPerson {
             *mode = CameraMode::FirstPerson;
         } else {
@@ -718,12 +765,12 @@ fn camera_toggle(
     }
 
     // Explicit Front View with C
-    if keys.just_pressed(KeyCode::KeyC) {
+    if toggle_front {
         *mode = CameraMode::FrontPerson;
     }
 
     // Toggle flight with F
-    if keys.just_pressed(KeyCode::KeyF) {
+    if toggle_flight {
         physics.flying = !physics.flying;
         if !physics.flying {
             physics.velocity.y = 0.0;

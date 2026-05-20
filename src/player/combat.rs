@@ -146,9 +146,16 @@ fn fire_bow(
     player_query: Query<&Transform, With<Player>>,
     camera_query: Query<&GlobalTransform, With<Camera3d>>,
     ui_state: Res<UiState>,
+    gamepads: Query<&Gamepad>,
 ) {
     if ui_state.show_inventory || ui_state.show_pause_menu { return; }
-    if *weapon != WeaponState::Bow || !mouse_input.just_pressed(MouseButton::Left) { return; }
+    
+    let mut is_firing = mouse_input.just_pressed(MouseButton::Left);
+    for gamepad in gamepads.iter() {
+        if gamepad.just_pressed(GamepadButton::RightTrigger2) { is_firing = true; }
+    }
+    
+    if *weapon != WeaponState::Bow || !is_firing { return; }
 
     let wood_count = inventory.resources.get(&BlockType::Wood).copied().unwrap_or(0);
     if wood_count == 0 { return; }
@@ -295,8 +302,14 @@ fn melee_attack(
     camera_query: Query<&GlobalTransform, With<Camera3d>>,
     hittable_query: Query<(Entity, &GlobalTransform), With<Hittable>>,
     ui_state: Res<UiState>,
+    gamepads: Query<&Gamepad>,
 ) {
-    if !mouse_input.just_pressed(MouseButton::Left) || ui_state.show_inventory || ui_state.show_pause_menu { return; }
+    let mut is_attacking = mouse_input.just_pressed(MouseButton::Left);
+    for gamepad in gamepads.iter() {
+        if gamepad.just_pressed(GamepadButton::RightTrigger2) { is_attacking = true; }
+    }
+
+    if !is_attacking || ui_state.show_inventory || ui_state.show_pause_menu { return; }
 
     let damage = match *weapon {
         WeaponState::Sword => 10.0,
@@ -334,8 +347,14 @@ pub fn fire_laser(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut laser_audio: ResMut<LaserAudio>,
     laser_heat: Res<LaserHeat>,
+    gamepads: Query<&Gamepad>,
 ) {
-    if !mouse_input.pressed(MouseButton::Left) || *weapon != WeaponState::Laser || ui_state.show_inventory || ui_state.show_pause_menu || laser_heat.overheated {
+    let mut is_firing = mouse_input.pressed(MouseButton::Left);
+    for gamepad in gamepads.iter() {
+        if gamepad.pressed(GamepadButton::RightTrigger2) { is_firing = true; }
+    }
+
+    if !is_firing || *weapon != WeaponState::Laser || ui_state.show_inventory || ui_state.show_pause_menu || laser_heat.overheated {
         for (entity, _) in beam_query.iter() {
             commands.entity(entity).despawn();
         }
@@ -426,9 +445,15 @@ fn update_laser_heat(
     mouse_input: Res<ButtonInput<MouseButton>>,
     weapon: Res<WeaponState>,
     mut laser_heat: ResMut<LaserHeat>,
+    gamepads: Query<&Gamepad>,
 ) {
     let dt = time.delta_secs();
-    if *weapon == WeaponState::Laser && mouse_input.pressed(MouseButton::Left) && !laser_heat.overheated {
+    let mut is_firing = mouse_input.pressed(MouseButton::Left);
+    for gamepad in gamepads.iter() {
+        if gamepad.pressed(GamepadButton::RightTrigger2) { is_firing = true; }
+    }
+    
+    if *weapon == WeaponState::Laser && is_firing && !laser_heat.overheated {
         // Heating up
         laser_heat.current += 30.0 * dt;
         if laser_heat.current >= 100.0 {

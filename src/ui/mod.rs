@@ -99,14 +99,21 @@ fn ui_input_handler(
     mut ui_state: ResMut<UiState>,
     mut save_events: MessageWriter<crate::persistence::SaveEvent>,
     mut load_events: MessageWriter<crate::persistence::LoadEvent>,
+    gamepads: Query<&Gamepad>,
 ) {
-    // Toggle inventory with 'E'
-    if input.just_pressed(KeyCode::KeyE) {
+    let mut toggle_inv = input.just_pressed(KeyCode::KeyE);
+    let mut toggle_pause = input.just_pressed(KeyCode::Escape);
+    
+    for gamepad in gamepads.iter() {
+        if gamepad.just_pressed(GamepadButton::Start) { toggle_pause = true; }
+        if gamepad.just_pressed(GamepadButton::DPadDown) { toggle_inv = true; }
+    }
+
+    if toggle_inv {
         ui_state.show_inventory = !ui_state.show_inventory;
     }
 
-    // Toggle pause menu with ESC
-    if input.just_pressed(KeyCode::Escape) {
+    if toggle_pause {
         ui_state.show_pause_menu = !ui_state.show_pause_menu;
     }
 

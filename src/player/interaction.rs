@@ -239,6 +239,7 @@ pub struct InteractionParams<'w, 's> {
     pub ui_state: Res<'w, UiState>,
     pub weapon: Res<'w, WeaponState>,
     pub health_query: Query<'w, 's, (Entity, &'static Transform, &'static mut crate::player::combat::Health), (With<crate::player::combat::Hittable>, Without<crate::player::combat::DamageEvent>)>,
+    pub gamepads: Query<'w, 's, &'static Gamepad>,
 }
 
 fn update_interaction(
@@ -290,7 +291,11 @@ fn update_interaction(
     }
 
     if let Some(hit_entity) = entity_hit {
-        if params.mouse_input.pressed(MouseButton::Left) {
+        let mut is_mining = params.mouse_input.pressed(MouseButton::Left);
+        for gamepad in params.gamepads.iter() {
+            if gamepad.pressed(GamepadButton::RightTrigger2) { is_mining = true; }
+        }
+        if is_mining {
             if let Ok((_ent, _trans, mut health)) = params.health_query.get_mut(hit_entity) {
                 let efficiency = if *params.weapon == WeaponState::Axe { 4.0 } else { 0.5 };
                 health.hp -= params.time.delta_secs() * 40.0 * efficiency;
@@ -360,7 +365,11 @@ fn update_interaction(
     }
 
     if let Some(pos) = params.selection.position {
-        if params.mouse_input.pressed(MouseButton::Left) {
+        let mut is_mining = params.mouse_input.pressed(MouseButton::Left);
+        for gamepad in params.gamepads.iter() {
+            if gamepad.pressed(GamepadButton::RightTrigger2) { is_mining = true; }
+        }
+        if is_mining {
             if mech.active {
                 // Determine block type (supports both standard solid voxels and custom architectural elements)
                 let block_type_opt = if let WorldVoxel::Solid(mat) = voxel_world.get_voxel(pos) {
@@ -428,7 +437,11 @@ fn update_interaction(
             params.mining_progress.progress = 0.0;
         }
 
-        if params.mouse_input.just_pressed(MouseButton::Right) && params.placement.current_block != BlockType::ProceduralWall {
+        let mut is_placing = params.mouse_input.just_pressed(MouseButton::Right);
+        for gamepad in params.gamepads.iter() {
+            if gamepad.just_pressed(GamepadButton::LeftTrigger2) { is_placing = true; }
+        }
+        if is_placing && params.placement.current_block != BlockType::ProceduralWall {
             if let Some(normal) = params.selection.normal {
                 // Permit building on top or on the sides of both standard blocks and custom machinery/slopes
                 let can_build = if let WorldVoxel::Solid(_) = voxel_world.get_voxel(pos) {
@@ -785,8 +798,13 @@ fn toggle_doors(
     mouse: Res<ButtonInput<MouseButton>>,
     camera_query: Query<(&Camera, &GlobalTransform)>,
     mut door_query: Query<(Entity, &GlobalTransform, &mut Transform, &mut Door)>,
+    gamepads: Query<&Gamepad>,
 ) {
-    if !mouse.just_pressed(MouseButton::Left) { return; }
+    let mut toggling = mouse.just_pressed(MouseButton::Left);
+    for gamepad in gamepads.iter() {
+        if gamepad.just_pressed(GamepadButton::RightTrigger2) { toggling = true; }
+    }
+    if !toggling { return; }
 
     let (camera, camera_transform) = camera_query.single().expect("Camera must exist");
     let viewport_size = camera.logical_viewport_size().unwrap_or(Vec2::new(1920.0, 1080.0));
