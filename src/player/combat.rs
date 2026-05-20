@@ -106,7 +106,13 @@ fn weapon_select(
     keys: Res<ButtonInput<KeyCode>>,
     mut weapon: ResMut<WeaponState>,
     inventory: Res<Inventory>,
+    gamepads: Query<&Gamepad>,
+    ui_state: Res<UiState>,
 ) {
+    if ui_state.show_inventory || ui_state.show_pause_menu {
+        return;
+    }
+
     if keys.just_pressed(KeyCode::Digit1) {
         if inventory.has_gold_pickaxe || inventory.has_iron_pickaxe || inventory.has_pickaxe {
             *weapon = WeaponState::Pickaxe;
@@ -133,6 +139,90 @@ fn weapon_select(
     }
     if keys.just_pressed(KeyCode::Digit5) && inventory.has_bow {
         *weapon = WeaponState::Bow;
+    }
+
+    for gamepad in gamepads.iter() {
+        if gamepad.just_pressed(GamepadButton::RightTrigger) {
+            // Cycle weapons forward: NoWeapon -> Pickaxe -> Axe -> Sword -> Laser -> Bow -> NoWeapon
+            let mut next = *weapon;
+            loop {
+                next = match next {
+                    WeaponState::NoWeapon => WeaponState::Pickaxe,
+                    WeaponState::Pickaxe => WeaponState::Axe,
+                    WeaponState::Axe => WeaponState::Sword,
+                    WeaponState::Sword => WeaponState::Laser,
+                    WeaponState::Laser => WeaponState::Bow,
+                    WeaponState::Bow => WeaponState::NoWeapon,
+                };
+                
+                // Check if we have the selected weapon/tool
+                match next {
+                    WeaponState::NoWeapon | WeaponState::Laser => break,
+                    WeaponState::Pickaxe => {
+                        if inventory.has_gold_pickaxe || inventory.has_iron_pickaxe || inventory.has_pickaxe {
+                            break;
+                        }
+                    }
+                    WeaponState::Axe => {
+                        if inventory.has_gold_axe || inventory.has_iron_axe || inventory.has_axe {
+                            break;
+                        }
+                    }
+                    WeaponState::Sword => {
+                        if inventory.has_gold_sword || inventory.has_iron_sword || inventory.has_sword {
+                            break;
+                        }
+                    }
+                    WeaponState::Bow => {
+                        if inventory.has_bow {
+                            break;
+                        }
+                    }
+                }
+            }
+            *weapon = next;
+        }
+        
+        if gamepad.just_pressed(GamepadButton::LeftTrigger) {
+            // Cycle weapons backward: NoWeapon -> Bow -> Laser -> Sword -> Axe -> Pickaxe -> NoWeapon
+            let mut prev = *weapon;
+            loop {
+                prev = match prev {
+                    WeaponState::NoWeapon => WeaponState::Bow,
+                    WeaponState::Bow => WeaponState::Laser,
+                    WeaponState::Laser => WeaponState::Sword,
+                    WeaponState::Sword => WeaponState::Axe,
+                    WeaponState::Axe => WeaponState::Pickaxe,
+                    WeaponState::Pickaxe => WeaponState::NoWeapon,
+                };
+                
+                // Check if we have the selected weapon/tool
+                match prev {
+                    WeaponState::NoWeapon | WeaponState::Laser => break,
+                    WeaponState::Pickaxe => {
+                        if inventory.has_gold_pickaxe || inventory.has_iron_pickaxe || inventory.has_pickaxe {
+                            break;
+                        }
+                    }
+                    WeaponState::Axe => {
+                        if inventory.has_gold_axe || inventory.has_iron_axe || inventory.has_axe {
+                            break;
+                        }
+                    }
+                    WeaponState::Sword => {
+                        if inventory.has_gold_sword || inventory.has_iron_sword || inventory.has_sword {
+                            break;
+                        }
+                    }
+                    WeaponState::Bow => {
+                        if inventory.has_bow {
+                            break;
+                        }
+                    }
+                }
+            }
+            *weapon = prev;
+        }
     }
 }
 
