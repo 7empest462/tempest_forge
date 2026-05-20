@@ -11,6 +11,8 @@ pub use wall_constructor::WallConstructor;
 use bevy::prelude::*;
 use crate::voxel::BlockType;
 use rand::RngExt;
+use bevy_voxel_world::prelude::VoxelWorld;
+use crate::world::noise_generator::NoiseGenerator;
 
 /// Plugin for procedural brick wall construction and destruction.
 pub struct ProceduralWallsPlugin;
@@ -72,6 +74,8 @@ fn update_wall_builder(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     asset_server: Res<AssetServer>,
+    voxel_world: VoxelWorld<NoiseGenerator>,
+    gamepads: Query<&Gamepad>,
 ) {
     // Only active when the Procedural Wall building option is selected and UI is closed
     if placement.current_block != BlockType::ProceduralWall || ui_state.show_inventory || ui_state.show_pause_menu {
@@ -85,8 +89,24 @@ fn update_wall_builder(
         None
     };
 
-    // 1. Place curve control point (Right-Click)
-    if mouse_input.just_pressed(MouseButton::Right) {
+    let mut gamepad_place = false;
+    let mut gamepad_undo = false;
+    let mut gamepad_cancel = false;
+    let mut gamepad_height_up = false;
+    let mut gamepad_height_down = false;
+    let mut gamepad_build = false;
+
+    for gamepad in gamepads.iter() {
+        if gamepad.just_pressed(GamepadButton::LeftTrigger2) { gamepad_place = true; }
+        if gamepad.just_pressed(GamepadButton::LeftTrigger) { gamepad_undo = true; }
+        if gamepad.just_pressed(GamepadButton::East) { gamepad_cancel = true; }
+        if gamepad.pressed(GamepadButton::DPadRight) { gamepad_height_up = true; }
+        if gamepad.pressed(GamepadButton::DPadLeft) { gamepad_height_down = true; }
+        if gamepad.just_pressed(GamepadButton::RightTrigger2) { gamepad_build = true; }
+    }
+
+    // 1. Place curve control point (Right-Click or LT)
+    if mouse_input.just_pressed(MouseButton::Right) || gamepad_place {
         if let Some(pt) = hover_point {
             builder.points.push(pt);
             
@@ -110,26 +130,26 @@ fn update_wall_builder(
         }
     }
 
-    // 2. Undo last point (Backspace or Delete)
-    if keys.just_pressed(KeyCode::Backspace) || keys.just_pressed(KeyCode::Delete) {
+    // 2. Undo last point (Backspace, Delete, or LB)
+    if keys.just_pressed(KeyCode::Backspace) || keys.just_pressed(KeyCode::Delete) || gamepad_undo {
         builder.points.pop();
     }
 
-    // 3. Cancel build (Escape)
-    if keys.just_pressed(KeyCode::Escape) {
+    // 3. Cancel build (Escape or B Button)
+    if keys.just_pressed(KeyCode::Escape) || gamepad_cancel {
         builder.points.clear();
     }
 
-    // 4. Dynamic height adjustments (Up/Down arrow keys)
-    if keys.pressed(KeyCode::ArrowUp) {
+    // 4. Dynamic height adjustments (Up/Down arrow keys or D-Pad Right/Left)
+    if keys.pressed(KeyCode::ArrowUp) || gamepad_height_up {
         builder.height = (builder.height + 0.04).min(6.0); // Maximum 6.0m high
     }
-    if keys.pressed(KeyCode::ArrowDown) {
+    if keys.pressed(KeyCode::ArrowDown) || gamepad_height_down {
         builder.height = (builder.height - 0.04).max(0.4); // Minimum 0.4m high (at least 1 row)
     }
 
-    // 5. Confirm and build wall (Enter/Return)
-    if keys.just_pressed(KeyCode::Enter) || keys.just_pressed(KeyCode::NumpadEnter) {
+    // 5. Confirm and build wall (Enter/Return or RT)
+    if keys.just_pressed(KeyCode::Enter) || keys.just_pressed(KeyCode::NumpadEnter) || gamepad_build {
         if builder.points.len() >= 2 {
             // =========================================================================
             // ACTIVE TEXTURE CONFIGURATION (Choose your cozy wall style here!):
@@ -142,7 +162,9 @@ fn update_wall_builder(
             let raw_curve = Curve::from(builder.points.clone()).smooth(2);
             // Ensure even segment lengths for beautiful bricks
             let resampled_curve = raw_curve.resample(0.8);
-            let bricks = WallConstructor::from_curve(&resampled_curve, builder.height);
+            let bricks = WallConstructor::from_curve(&resampled_curve, builder.height, |pos| {
+                crate::world::manager::find_ground_height(pos, &voxel_world).unwrap_or(pos.y)
+            });
 
             let mut rng = fastrand::Rng::new();
 
@@ -194,6 +216,8 @@ fn update_wall_builder(
                         elapsed: 0.0,
                         duration: 0.42,
                     },
+                    Visibility::default(),
+                    InheritedVisibility::default(),
                 )).with_children(|parent| {
                     // Dynamic adjacency checking: detect if there are neighboring bricks on any side.
                     // If a neighbor is missing (e.g. at wall boundaries, around doors, or skipped on the top row),
@@ -315,6 +339,7 @@ fn draw_wall_preview(
     builder: Res<ProceduralWallBuilder>,
     placement: Res<crate::player::interaction::PlacementState>,
     selection: Res<crate::player::interaction::SelectedBlock>,
+    voxel_world: VoxelWorld<NoiseGenerator>,
 ) {
     if placement.current_block != BlockType::ProceduralWall || builder.points.is_empty() {
         return;
@@ -344,7 +369,9 @@ fn draw_wall_preview(
     if builder.points.len() >= 2 {
         let raw_curve = Curve::from(builder.points.clone()).smooth(2);
         let resampled_curve = raw_curve.resample(0.8);
-        let bricks = WallConstructor::from_curve(&resampled_curve, builder.height);
+        let bricks = WallConstructor::from_curve(&resampled_curve, builder.height, |pos| {
+            crate::world::manager::find_ground_height(pos, &voxel_world).unwrap_or(pos.y)
+        });
 
         for brick in bricks {
             gizmos.primitive_3d(

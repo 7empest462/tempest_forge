@@ -9,34 +9,7 @@ pub struct PhysicsPlugin;
 
 impl Plugin for PhysicsPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, setup_player_physics_body)
-           .add_systems(Update, sync_player_with_physics);
-    }
-}
-
-/// Set up player as a Rapier rigid body (kinematic)
-fn setup_player_physics_body(
-    mut commands: Commands,
-    player_query: Query<Entity, With<Player>>,
-) {
-    if let Ok(player_entity) = player_query.single() {
-        // Add Rapier physics components to player
-        commands.entity(player_entity)
-            // Kinematic body (we control movement, physics handles collision response)
-            .insert(RigidBody::KinematicPositionBased)
-            // Use KinematicCharacterController for automatic step climbing and smoother movement
-            .insert(KinematicCharacterController {
-                offset: CharacterLength::Relative(0.1),
-                ..default()
-            })
-            // Capsule collider for realistic player shape (0.3 radius, 1.6 height)
-            .insert(Collider::capsule_y(0.8, 0.3))
-            // Physical properties
-            .insert(Restitution::coefficient(0.0))
-            .insert(Friction::coefficient(0.5))
-            // Filtering
-            .insert(ActiveCollisionTypes::default() | ActiveCollisionTypes::KINEMATIC_STATIC)
-            .insert(ActiveHooks::FILTER_CONTACT_PAIRS);
+        app.add_systems(Update, sync_player_with_physics);
     }
 }
 

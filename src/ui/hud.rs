@@ -99,10 +99,22 @@ pub fn draw_hud(
                         if placement.current_block == crate::voxel::BlockType::ProceduralWall {
                             ui.add_space(5.0);
                             ui.label(egui::RichText::new("PROCEDURAL WALL:").strong().color(egui::Color32::from_rgb(255, 215, 0)));
-                            ui.label("• Right-Click: Place Point");
-                            ui.label("• Backspace: Undo Last Point");
-                            ui.label("• Escape: Cancel Wall");
-                            ui.label("• Enter/Return: Build Wall!");
+                            match ui_state.input_scheme {
+                                crate::ui::InputScheme::KeyboardMouse => {
+                                    ui.label("• Right-Click: Place Point");
+                                    ui.label("• Backspace: Undo Last Point");
+                                    ui.label("• Escape: Cancel Wall");
+                                    ui.label("• Arrow Up/Down: Adjust Height");
+                                    ui.label("• Enter: Build Wall!");
+                                }
+                                crate::ui::InputScheme::SteamDeck => {
+                                    ui.label("• LT (L2): Place Point");
+                                    ui.label("• LB (L1): Undo Last Point");
+                                    ui.label("• B Button: Cancel Wall");
+                                    ui.label("• D-Pad Left/Right: Adjust Height");
+                                    ui.label("• RT (R2): Build Wall!");
+                                }
+                            }
                         }
                     });
                 });
@@ -114,16 +126,40 @@ pub fn draw_hud(
         .anchor(egui::Align2::CENTER_BOTTOM, [0.0, -20.0])
         .show(ctx, |ui| {
             hud_frame.show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new("WASD").strong()); ui.label("Move |");
-                    ui.label(egui::RichText::new("SHIFT").strong()); ui.label("Sprint |");
-                    ui.label(egui::RichText::new("SPACE").strong()); ui.label("Fly Up |");
-                    ui.label(egui::RichText::new("I").strong()); ui.label("Inventory |");
-                    ui.label(egui::RichText::new("M").strong()); ui.label("Toggle Mech |");
-                    ui.label(egui::RichText::new("1-5").strong()); ui.label("Weapons |");
-                    ui.label(egui::RichText::new("Z-B").strong()); ui.label("Build Blocks |");
-                    ui.label(egui::RichText::new("Right-Click").strong()); ui.label("Place Block |");
-                    ui.label(egui::RichText::new("F5/F9").strong()); ui.label("Save/Load");
+                ui.vertical(|ui| {
+                    match ui_state.input_scheme {
+                        crate::ui::InputScheme::KeyboardMouse => {
+                            ui.horizontal(|ui| {
+                                ui.label(egui::RichText::new("WASD").strong()); ui.label("Move |");
+                                ui.label(egui::RichText::new("SHIFT").strong()); ui.label("Sprint |");
+                                ui.label(egui::RichText::new("SPACE/CTRL").strong()); ui.label("Fly Up/Down |");
+                                ui.label(egui::RichText::new("I/E").strong()); ui.label("Inventory |");
+                                ui.label(egui::RichText::new("M").strong()); ui.label("Toggle Mech |");
+                                ui.label(egui::RichText::new("1-3").strong()); ui.label("Tools |");
+                                ui.label(egui::RichText::new("Z-B").strong()); ui.label("Build Blocks |");
+                                ui.label(egui::RichText::new("Right-Click").strong()); ui.label("Place Block |");
+                                ui.label(egui::RichText::new("F5/F9").strong()); ui.label("Save/Load |");
+                                ui.label(egui::RichText::new("ESC").strong()); ui.label("Pause");
+                            });
+                        }
+                        crate::ui::InputScheme::SteamDeck => {
+                            ui.horizontal(|ui| {
+                                ui.label(egui::RichText::new("L-STICK").strong().color(egui::Color32::from_rgb(0, 200, 255))); ui.label("Move |");
+                                ui.label(egui::RichText::new("R-STICK").strong().color(egui::Color32::from_rgb(0, 200, 255))); ui.label("Look |");
+                                ui.label(egui::RichText::new("L3").strong().color(egui::Color32::from_rgb(0, 200, 255))); ui.label("Sprint |");
+                                ui.label(egui::RichText::new("A").strong().color(egui::Color32::from_rgb(0, 200, 255))); ui.label("Jump |");
+                                ui.label(egui::RichText::new("B").strong().color(egui::Color32::from_rgb(0, 200, 255))); ui.label("Dive |");
+                                ui.label(egui::RichText::new("X").strong().color(egui::Color32::from_rgb(0, 200, 255))); ui.label("Fly |");
+                                ui.label(egui::RichText::new("Y").strong().color(egui::Color32::from_rgb(0, 200, 255))); ui.label("Mech Suit |");
+                                ui.label(egui::RichText::new("D-PAD L/U/R").strong().color(egui::Color32::from_rgb(0, 200, 255))); ui.label("Equip Tools |");
+                                ui.label(egui::RichText::new("D-PAD ↓").strong().color(egui::Color32::from_rgb(0, 200, 255))); ui.label("Inventory |");
+                                ui.label(egui::RichText::new("RT").strong().color(egui::Color32::from_rgb(0, 200, 255))); ui.label("Mine/Action |");
+                                ui.label(egui::RichText::new("LT").strong().color(egui::Color32::from_rgb(0, 200, 255))); ui.label("Place |");
+                                ui.label(egui::RichText::new("SELECT").strong().color(egui::Color32::from_rgb(0, 200, 255))); ui.label("Camera |");
+                                ui.label(egui::RichText::new("START").strong().color(egui::Color32::from_rgb(0, 200, 255))); ui.label("Menu");
+                            });
+                        }
+                    }
                 });
             });
         });

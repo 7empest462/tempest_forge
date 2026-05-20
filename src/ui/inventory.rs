@@ -236,7 +236,11 @@ pub fn draw_inventory_panel(
 
             ui.add_space(20.0);
             ui.vertical_centered_justified(|ui| {
-                let close_btn = ui.button(egui::RichText::new("CLOSE").strong());
+                let close_label = match ui_state.input_scheme {
+                    crate::ui::InputScheme::KeyboardMouse => "CLOSE (ESC / E)",
+                    crate::ui::InputScheme::SteamDeck => "CLOSE (B Button)",
+                };
+                let close_btn = ui.button(egui::RichText::new(close_label).strong());
                 let close_rect = close_btn.rect;
                 let close_clicked = if let Some(pos) = mouse_pos {
                     close_rect.contains(pos) && ctx.input(|i| i.pointer.button_released(egui::PointerButton::Primary))

@@ -48,7 +48,7 @@ impl NoiseGenerator {
 
         let mut temp_noise = FastNoise::seeded(1337 + 4);
         temp_noise.set_noise_type(NoiseType::Perlin);
-        temp_noise.set_frequency(0.002);
+        temp_noise.set_frequency(0.01);
 
         let mut ore_noise = FastNoise::seeded(1337 + 5);
         ore_noise.set_noise_type(NoiseType::Perlin);
@@ -79,16 +79,18 @@ impl NoiseGenerator {
 
         // Map base (-1.0 to 1.0) to a more dramatic height range
         // We want a lot of area to be below sea level (15.0)
-        let mut height = if base.abs() < 0.15 {
+        let mut height = if base.abs() < 0.30 {
             // Plateau / Flat Land (Plains)
-            let t = (base + 0.15) / 0.3; // 0 to 1
-            26.0 + (t - 0.5) * 4.0 // Very gentle slope (±2m)
+            let t = (base + 0.30) / 0.60; // 0 to 1
+            24.0 + (t - 0.5) * 3.0 // Extremely gentle slope (±1.5m)
         } else if base < 0.0 {
             // Oceans and lowlands
-            base * 50.0 + 26.0 
+            let t = (base + 0.30) / -0.70; // 0 to 1 as base goes from -0.30 to -1.0
+            22.5 - t * 40.0
         } else {
             // Plains and mountains
-            base * 70.0 + 26.0
+            let t = (base - 0.30) / 0.70; // 0 to 1 as base goes from 0.30 to 1.0
+            25.5 + t * 80.0
         };
 
         // Add mountain peaks (Smooth ramp)
@@ -108,6 +110,27 @@ impl NoiseGenerator {
             is_desert,
             _is_forest: is_forest,
         }
+    }
+
+    pub fn get_adjusted_surface_height(&self, x: f32, z: f32) -> f32 {
+        let terrain = self.get_terrain(x, z);
+        let base = self.inner.base_noise.get_noise(x, z);
+
+        // River Carving (Ridged noise)
+        let river_val = self.inner.temp_noise.get_noise(x, z).abs();
+        let is_river = river_val < 0.05;
+        
+        let river_depth = if is_river {
+            let target_river_height = 15.0 + (base + 0.3).max(0.0) * 15.0;
+            let max_depth = (terrain.height - target_river_height).max(0.0);
+            let t = river_val / 0.05;
+            let carve_factor = 1.0 - t;
+            max_depth * carve_factor
+        } else {
+            0.0
+        };
+
+        terrain.height - river_depth
     }
 
     pub fn get_cave(&self, x: f32, y: f32, z: f32) -> f32 {
@@ -174,15 +197,8 @@ impl VoxelWorldConfig for NoiseGenerator {
                 let z = pos.z as f32;
 
                 let terrain = gen_ref.get_terrain(x, z);
-                let surface_height = terrain.height;
+                let adjusted_surface = gen_ref.get_adjusted_surface_height(x, z);
                 let sea_level = 15.0;
-
-                // River Carving (Ridged noise)
-                let river_val = gen_ref.inner.temp_noise.get_noise(x * 0.015, z * 0.015).abs();
-                let is_river = river_val < 0.035;
-                // Only carve rivers in lowlands (height < 40)
-                let river_depth = if is_river && surface_height < 40.0 { 6.0 } else { 0.0 };
-                let adjusted_surface = surface_height - river_depth;
 
                 // 3. Flora & Structures (Above ground/water)
                 if y > adjusted_surface {

@@ -23,9 +23,10 @@ impl Plugin for WorldPlugin {
             tree_generator::chunk_vegetation_system,
             tree_generator::start_tree_generation,
             tree_generator::complete_tree_generation,
+            make_water_transparent,
+            sync_chunk_colliders,
         ).chain())
-        .add_systems(Startup, setup)
-        .add_systems(Update, make_water_transparent);
+        .add_systems(Startup, setup);
     }
 }
 
@@ -40,6 +41,29 @@ fn make_water_transparent(
             mat.alpha_mode = AlphaMode::Opaque; // Back to solid to fix X-ray
             *done = true;
             println!("VOXEL WORLD MATERIAL SET TO OPAQUE");
+        }
+    }
+}
+
+fn sync_chunk_colliders(
+    mut commands: Commands,
+    chunk_query: Query<(Entity, &Mesh3d), (Changed<Mesh3d>, With<Chunk<noise_generator::NoiseGenerator>>)>,
+    meshes: Res<Assets<Mesh>>,
+) {
+    for (entity, mesh_handle) in chunk_query.iter() {
+        if let Some(mesh) = meshes.get(mesh_handle) {
+            // Using TriMesh(Default::default()) for flags or TriMesh
+            if let Some(collider) = bevy_rapier3d::prelude::Collider::from_bevy_mesh(mesh, &bevy_rapier3d::prelude::ComputedColliderShape::TriMesh(Default::default())) {
+                commands.entity(entity).insert((
+                    collider,
+                    bevy_rapier3d::prelude::RigidBody::Fixed,
+                    // Give chunks a high friction so players don't slide down shallow slopes
+                    bevy_rapier3d::prelude::Friction::coefficient(1.0),
+                ));
+            } else {
+                // If the mesh is empty (e.g. all air chunk), just ensure no collider exists
+                commands.entity(entity).remove::<(bevy_rapier3d::prelude::Collider, bevy_rapier3d::prelude::RigidBody)>();
+            }
         }
     }
 }

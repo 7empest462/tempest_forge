@@ -8,8 +8,8 @@ pub fn find_ground_height(pos: Vec3, world: &VoxelWorld<NoiseGenerator>) -> Opti
     let gy = pos.y.floor() as i32;
     let gz = pos.z.floor() as i32;
 
-    // Search range downwards and upwards
-    for y in (gy - 128..gy + 32).rev() {
+    // Search range downwards and upwards (wide enough for deep valleys and high mountains)
+    for y in (gy - 256..gy + 64).rev() {
         let p = IVec3::new(gx, y, gz);
         if let WorldVoxel::Solid(mat) = world.get_voxel(p) {
             // Ignore water (BlockType::Water == 1)
@@ -27,7 +27,8 @@ pub fn find_stable_ground_height(pos: Vec3, world: &VoxelWorld<NoiseGenerator>) 
     let gy = pos.y.floor() as i32;
     let gz = pos.z.floor() as i32;
 
-    for y in (gy - 128..gy + 32).rev() {
+    // Search range downwards and upwards (wide enough for deep valleys and high mountains)
+    for y in (gy - 256..gy + 64).rev() {
         let p = IVec3::new(gx, y, gz);
         if let WorldVoxel::Solid(mat) = world.get_voxel(p) {
             if is_stable_block(mat) {

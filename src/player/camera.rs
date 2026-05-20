@@ -169,6 +169,7 @@ fn setup_player(
     let shoulder_r = crate::player::model::mech_shoulder_right();
     let gauntlet_parts = crate::player::model::mech_gauntlet();
     let leg_armor = crate::player::model::mech_leg_armor();
+    let boot_parts = crate::player::model::mech_boot();
 
     let drill_mat = materials.add(StandardMaterial {
         base_color: Color::srgb(0.6, 0.6, 0.7),
@@ -222,6 +223,23 @@ fn setup_player(
         Transform::from_translation(spawn_pos),
         Visibility::default(),
         InheritedVisibility::default(),
+        (
+            bevy_rapier3d::prelude::RigidBody::KinematicPositionBased,
+            bevy_rapier3d::prelude::Collider::capsule_y(0.9, 0.35),
+            bevy_rapier3d::prelude::KinematicCharacterController {
+                up: Vec3::Y,
+                offset: bevy_rapier3d::prelude::CharacterLength::Relative(0.1),
+                slide: true,
+                max_slope_climb_angle: 55.0_f32.to_radians(),
+                min_slope_slide_angle: 70.0_f32.to_radians(),
+                snap_to_ground: Some(bevy_rapier3d::prelude::CharacterLength::Relative(0.2)),
+                ..default()
+            },
+            bevy_rapier3d::prelude::Restitution::coefficient(0.0),
+            bevy_rapier3d::prelude::Friction::coefficient(0.6),
+            bevy_rapier3d::prelude::ActiveCollisionTypes::default() | bevy_rapier3d::prelude::ActiveCollisionTypes::KINEMATIC_STATIC,
+            bevy_rapier3d::prelude::ActiveHooks::FILTER_CONTACT_PAIRS,
+        )
     )).with_children(|parent| {
         println!("PLAYER SPAWNED AT: {:?}", spawn_pos);
 
@@ -254,7 +272,8 @@ fn setup_player(
                 PlayerHead,
                 Mesh3d(head_mesh.clone()),
                 MeshMaterial3d(character_mat.clone()),
-                Transform::from_xyz(0.0, 0.025, 0.0),
+                // Head mesh now includes built-in neck; lower it so neck meets torso
+                Transform::from_xyz(0.0, 0.05, 0.0),
                 Visibility::Hidden,
                 InheritedVisibility::default(),
             ));
@@ -420,6 +439,15 @@ fn setup_player(
                         Visibility::Hidden,
                     ));
                 }
+                for (pos, size, ci) in &boot_parts {
+                    leg.spawn((
+                        MechVisual,
+                        Mesh3d(meshes.add(Cuboid::new(size.x, size.y, size.z))),
+                        MeshMaterial3d(mech_materials[*ci].clone()),
+                        Transform::from_translation(*pos),
+                        Visibility::Hidden,
+                    ));
+                }
             });
         }
     });
@@ -428,11 +456,15 @@ fn setup_player(
 fn player_move(
     keys: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
-    mut query: Query<(&mut Transform, &mut PhysicsState), With<Player>>,
+    mut query: Query<(
+        &mut Transform, 
+        &mut PhysicsState, 
+        &mut bevy_rapier3d::prelude::KinematicCharacterController,
+        Option<&bevy_rapier3d::prelude::KinematicCharacterControllerOutput>
+    ), With<Player>>,
     camera_query: Query<&Transform, (With<CameraPivot>, Without<Player>)>,
     ui_state: Res<UiState>,
     voxel_world: VoxelWorld<NoiseGenerator>,
-    collider_query: Query<&GlobalTransform, (With<bevy_rapier3d::prelude::Collider>, Without<Player>)>,
     noise_gen: Res<NoiseGenerator>,
     water_query: Query<(&WaterSimData, &Transform), (With<WaterMesh>, Without<Player>)>,
     mut commands: Commands,
@@ -442,7 +474,7 @@ fn player_move(
     if ui_state.show_inventory || ui_state.show_pause_menu {
         return;
     }
-    let Ok((mut transform, mut physics)) = query.single_mut() else { return };
+    let Ok((mut transform, mut physics, mut controller, output)) = query.single_mut() else { return };
     let Ok(_camera_transform) = camera_query.single() else { return };
     
     let was_swimming = physics.swimming;
@@ -492,30 +524,20 @@ fn player_move(
         speed *= 2.0;
     }
 
-    // Entity Collision: Prevent walking through trees and other colliders
-    let mut collision_speed = speed;
     if move_dir != Vec3::ZERO {
-        let next_pos = transform.translation + move_dir.normalize() * speed * time.delta_secs();
-        for collider_transform in collider_query.iter() {
-            let entity_pos = collider_transform.translation();
-            // Horizontal distance check (entities are cylinders)
-            let horizontal_dist = Vec2::new(entity_pos.x, entity_pos.z).distance(Vec2::new(next_pos.x, next_pos.z));
-            let vertical_diff = (next_pos.y - entity_pos.y).abs();
-            
-            if horizontal_dist < 1.0 && vertical_diff < 5.0 {
-                collision_speed = 0.0;
-                break;
-            }
-        }
-    }
-
-    if move_dir != Vec3::ZERO {
-        let velocity = move_dir.normalize() * collision_speed;
+        let velocity = move_dir.normalize() * speed;
         physics.velocity.x = velocity.x;
         physics.velocity.z = velocity.z;
     } else {
         physics.velocity.x = 0.0;
         physics.velocity.z = 0.0;
+    }
+    
+    // Read Rapier's native grounded state
+    if let Some(out) = output {
+        if !physics.flying && !in_water {
+            physics.grounded = out.grounded;
+        }
     }
     
     // Vertical movement & Flight Controls
@@ -532,7 +554,7 @@ fn player_move(
             if in_water {
                 physics.velocity.y = 4.0; // Swim up
             } else if physics.grounded {
-                physics.velocity.y = 6.0;
+                physics.velocity.y = 8.0; // Slightly stronger jump to overcome friction
                 physics.grounded = false;
             }
         }
@@ -564,13 +586,21 @@ fn player_move(
                 physics.velocity.y = physics.velocity.y.max(-2.5); // Max sink speed
             }
         } else {
-            physics.velocity.y -= 18.0 * dt;
+            if !physics.grounded {
+                physics.velocity.y -= 25.0 * dt; // Gravity
+            } else if physics.velocity.y < 0.0 {
+                // Prevent gravity from accumulating infinitely while standing on the ground
+                physics.velocity.y = 0.0;
+            }
         }
     }
     
     let dt = time.delta_secs().min(0.1);
     let delta = physics.velocity * dt;
-    transform.translation += delta;
+    
+    // Apply the translation delta to the controller so Rapier can sweep for collisions!
+    controller.translation = Some(delta);
+    
     physics.horizontal_velocity = Vec2::new(physics.velocity.x, physics.velocity.z);
 
     // Splash & Swimming Audio Logic
@@ -593,32 +623,6 @@ fn player_move(
     } else {
         if let Some(entity) = water_audio.swim_playing_entity.take() {
             commands.entity(entity).despawn();
-        }
-    }
-
-    // Collision & Ground Check
-    if let Some(ground) = find_ground_height(transform.translation, &voxel_world) {
-        if physics.flying {
-            // Prevent clipping through ground while flying
-            if transform.translation.y < ground {
-                transform.translation.y = ground;
-                if physics.velocity.y < 0.0 {
-                    physics.velocity.y = 0.0;
-                }
-            }
-        } else {
-            // Magnetic Grounding: if close to surface, snap down to prevent "skating"
-            if transform.translation.y <= ground + 0.15 {
-                transform.translation.y = ground;
-                physics.velocity.y = 0.0;
-                physics.grounded = true;
-            } else {
-                physics.grounded = false;
-            }
-        }
-    } else {
-        if !physics.flying {
-            physics.grounded = false;
         }
     }
 
@@ -714,6 +718,7 @@ fn mech_controls(
     keys: Res<ButtonInput<KeyCode>>,
     mut query: Query<&mut MechSuit, With<Player>>,
     gamepads: Query<&Gamepad>,
+    placement: Res<crate::player::interaction::PlacementState>,
 ) {
     let Ok(mut mech) = query.single_mut() else { return };
     let mut toggle = keys.just_pressed(KeyCode::KeyM);
@@ -721,11 +726,15 @@ fn mech_controls(
     let mut to_axe = keys.just_pressed(KeyCode::Digit2);
     let mut to_laser = keys.just_pressed(KeyCode::Digit3);
     
+    let is_procedural_wall = placement.current_block == crate::voxel::BlockType::ProceduralWall;
+    
     for gamepad in gamepads.iter() {
         if gamepad.just_pressed(GamepadButton::North) { toggle = true; }
-        if gamepad.just_pressed(GamepadButton::DPadLeft) { to_drill = true; }
-        if gamepad.just_pressed(GamepadButton::DPadUp) { to_axe = true; }
-        if gamepad.just_pressed(GamepadButton::DPadRight) { to_laser = true; }
+        if !is_procedural_wall {
+            if gamepad.just_pressed(GamepadButton::DPadLeft) { to_drill = true; }
+            if gamepad.just_pressed(GamepadButton::DPadUp) { to_axe = true; }
+            if gamepad.just_pressed(GamepadButton::DPadRight) { to_laser = true; }
+        }
     }
 
     if toggle { mech.active = !mech.active; }
@@ -952,7 +961,7 @@ pub struct FlightLight;
 
 fn update_flight_effects(
     mut commands: Commands,
-    player_query: Query<(Entity, &PhysicsState), With<Player>>,
+    player_query: Query<(Entity, &PhysicsState, &MechSuit), With<Player>>,
     thruster_query: Query<Entity, With<FlightThruster>>,
     arm_query: Query<Entity, With<PlayerArm>>,
     leg_query: Query<Entity, With<PlayerLeg>>,
@@ -964,10 +973,10 @@ fn update_flight_effects(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    let Ok((player_entity, physics)) = player_query.single() else { return };
+    let Ok((player_entity, physics, mech)) = player_query.single() else { return };
     let has_thrusters = !thruster_query.is_empty();
 
-    if physics.flying {
+    if physics.flying && mech.active {
         // 1. Spawn Thrusters and Flame Cones if they don't exist
         if !has_thrusters {
             if let Some(effect) = &thruster_effect {

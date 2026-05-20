@@ -7,11 +7,32 @@ pub mod hud;
 pub mod inventory;
 pub mod pause_menu;
 
+/// Control scheme modes
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InputScheme {
+    KeyboardMouse,
+    SteamDeck,
+}
+
+impl Default for InputScheme {
+    fn default() -> Self {
+        #[cfg(target_os = "linux")]
+        {
+            InputScheme::SteamDeck
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            InputScheme::KeyboardMouse
+        }
+    }
+}
+
 /// UI state tracking which panels are open
 #[derive(Resource, Default, PartialEq, Eq)]
 pub struct UiState {
     pub show_inventory: bool,
     pub show_pause_menu: bool,
+    pub input_scheme: InputScheme,
 }
 
 /// Resource to track if egui is ready for drawing (fonts initialized)
@@ -96,6 +117,7 @@ fn draw_loading_screen(
 /// Handle UI input (toggle panels with keys + quick save/load)
 fn ui_input_handler(
     input: Res<ButtonInput<KeyCode>>,
+    mouse_input: Res<ButtonInput<MouseButton>>,
     mut ui_state: ResMut<UiState>,
     mut save_events: MessageWriter<crate::persistence::SaveEvent>,
     mut load_events: MessageWriter<crate::persistence::LoadEvent>,
@@ -103,10 +125,42 @@ fn ui_input_handler(
 ) {
     let mut toggle_inv = input.just_pressed(KeyCode::KeyE);
     let mut toggle_pause = input.just_pressed(KeyCode::Escape);
+
+    // Auto-switch to Keyboard & Mouse if there's any key/mouse activity
+    if input.get_just_pressed().next().is_some() || mouse_input.get_just_pressed().next().is_some() {
+        if ui_state.input_scheme != InputScheme::KeyboardMouse {
+            ui_state.input_scheme = InputScheme::KeyboardMouse;
+            info!("Keyboard/Mouse input detected. Control scheme switched to Keyboard & Mouse.");
+        }
+    }
     
     for gamepad in gamepads.iter() {
         if gamepad.just_pressed(GamepadButton::Start) { toggle_pause = true; }
         if gamepad.just_pressed(GamepadButton::DPadDown) { toggle_inv = true; }
+
+        // Auto-switch to Steam Deck/gamepad scheme if any key is pressed
+        if gamepad.just_pressed(GamepadButton::Start)
+            || gamepad.just_pressed(GamepadButton::DPadDown)
+            || gamepad.just_pressed(GamepadButton::South)
+            || gamepad.just_pressed(GamepadButton::East)
+            || gamepad.just_pressed(GamepadButton::North)
+            || gamepad.just_pressed(GamepadButton::West)
+            || gamepad.just_pressed(GamepadButton::LeftTrigger2)
+            || gamepad.just_pressed(GamepadButton::RightTrigger2)
+            || gamepad.just_pressed(GamepadButton::LeftTrigger)
+            || gamepad.just_pressed(GamepadButton::RightTrigger)
+            || gamepad.just_pressed(GamepadButton::Select)
+            || gamepad.just_pressed(GamepadButton::LeftThumb)
+            || gamepad.just_pressed(GamepadButton::RightThumb)
+            || gamepad.just_pressed(GamepadButton::DPadLeft)
+            || gamepad.just_pressed(GamepadButton::DPadUp)
+            || gamepad.just_pressed(GamepadButton::DPadRight)
+        {
+            if ui_state.input_scheme != InputScheme::SteamDeck {
+                ui_state.input_scheme = InputScheme::SteamDeck;
+                info!("Gamepad input detected. Control scheme switched to Steam Deck.");
+            }
+        }
     }
 
     if toggle_inv {

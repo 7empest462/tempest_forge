@@ -191,7 +191,7 @@ impl Curve {
     }
 
     pub fn get_pos_at_u(&self, u: f32) -> Vec3 {
-        assert!(u <= 1.0 && u >= 0.0, "u is in incorrect range");
+        let u = u.clamp(0.0, 1.0);
 
         let (idx1, idx2) = self.get_curve_segment_from_u(u);
 
@@ -204,7 +204,7 @@ impl Curve {
     }
 
     pub fn get_tangent_at_u(&self, u: f32) -> Vec3 {
-        assert!(u <= 1.0 && u >= 0.0, "u is in incorrect range");
+        let u = u.clamp(0.0, 1.0);
 
         let (idx1, idx2) = self.get_curve_segment_from_u(u);
 

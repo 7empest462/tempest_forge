@@ -100,11 +100,7 @@ pub fn chunk_vegetation_system(
             let world_z = (chunk_key.z * 16) + z;
             
             let terrain = noise_gen.get_terrain(world_x as f32, world_z as f32);
-            
-            // River Carving (Ridged noise) logic must match noise_generator.rs exactly
-            let river_val = noise_gen.inner.temp_noise.get_noise(world_x as f32 * 0.02, world_z as f32 * 0.02).abs();
-            let is_river = river_val < 0.04;
-            let adjusted_surface = if is_river { terrain.height - 8.0 } else { terrain.height };
+            let adjusted_surface = noise_gen.get_adjusted_surface_height(world_x as f32, world_z as f32);
             
             // 1. Vertical Filtering: Only spawn if the surface belongs to THIS vertical chunk
             let surface_y = adjusted_surface.floor() as i32;
@@ -121,11 +117,11 @@ pub fn chunk_vegetation_system(
             // Sparse Plains (< -0.4): Very low density
             // Regular: Medium density
             let density_limit = if flora_val > 0.4 {
-                30 // Dense Forest
+                14 // Dense Forest
             } else if flora_val < -0.4 {
-                3  // Sparse Plains
+                1  // Sparse Plains
             } else {
-                12 // Regular transition
+                4 // Regular transition
             };
 
             if i >= density_limit { continue; }
@@ -160,6 +156,20 @@ pub fn chunk_vegetation_system(
 
         let candidates = if is_settlement_chunk { Vec::new() } else { scatter_candidates(chunk_key, 4, &mut tree_gen.rng) };
         for pos_2d in candidates {
+            // Apply flora moisture check to candidates to match biomes and reduce plains density
+            let flora_val = noise_gen.get_flora(pos_2d.x as f32, pos_2d.y as f32);
+            let spawn_chance = if flora_val > 0.4 {
+                0.80 // Forest
+            } else if flora_val < -0.4 {
+                0.02 // Sparse Plains
+            } else {
+                0.15 // Regular plains / transition
+            };
+
+            if tree_gen.rng.f32() > spawn_chance {
+                continue;
+            }
+
             let Some(height) = crate::world::manager::find_stable_ground_height(
                 Vec3::new(pos_2d.x as f32, 100.0, pos_2d.y as f32),
                 &voxel_world,

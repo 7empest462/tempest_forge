@@ -24,6 +24,9 @@ pub const CLOTH_2: i8    = 9;  // accent fabric (tempest blue)
 pub const LEATHER: i8    = 10; // belt/straps/boots (brown)
 pub const METAL: i8      = 11; // buckles/hardware (steel)
 pub const MOUTH: i8      = 12;
+pub const BROW: i8       = 13; // Eyebrows
+pub const LIP_DARK: i8   = 14; // Upper lip
+pub const LIP: i8        = 15; // Lower lip
 
 /// Returns (base_color, metallic, emissive) for each palette index.
 pub fn base_palette() -> Vec<(Color, f32, LinearRgba)> {
@@ -41,6 +44,9 @@ pub fn base_palette() -> Vec<(Color, f32, LinearRgba)> {
         (Color::srgb(0.35, 0.20, 0.12), 0.0, LinearRgba::BLACK),  // 10 Leather
         (Color::srgb(0.60, 0.62, 0.65), 0.6, LinearRgba::BLACK),  // 11 Steel
         (Color::srgb(0.50, 0.30, 0.20), 0.0, LinearRgba::BLACK),  // 12 Mouth
+        (Color::srgb(0.15, 0.08, 0.05), 0.0, LinearRgba::BLACK),  // 13 Brow
+        (Color::srgb(0.60, 0.25, 0.25), 0.0, LinearRgba::BLACK),  // 14 Lip Dark
+        (Color::srgb(0.70, 0.35, 0.35), 0.0, LinearRgba::BLACK),  // 15 Lip
     ]
 }
 
@@ -183,29 +189,65 @@ impl Grid3D {
 // ========================================================
 
 pub fn build_head_mesh() -> Mesh {
-    // Head: ~24x28x24 voxels
-    let mut g = Grid3D::new(24, 28, 24);
-    let center = Vec3::new(12.0, 10.0, 12.0); // Shifted down so joint is at base
-    
-    // Main skull
-    g.draw_sphere(center + Vec3::Y * 4.0, 10.0, SKIN);
-    
-    // Face Details (Now on Front side: Z < 12)
-    g.draw_sphere(Vec3::new(8.5, 14.0, 4.0), 2.0, EYE_W);
-    g.draw_sphere(Vec3::new(8.5, 14.0, 3.0), 1.0, IRIS);
-    g.draw_sphere(Vec3::new(15.5, 14.0, 4.0), 2.0, EYE_W);
-    g.draw_sphere(Vec3::new(15.5, 14.0, 3.0), 1.0, IRIS);
+    let mut g = Grid3D::new(32, 36, 32);  // Extra Y height for neck below
+    let center = Vec3::new(16.0, 18.0, 16.0); // Raised center to make room for neck
 
-    // Goggles (Now on Front side)
-    g.draw_cylinder(Vec3::new(5.0, 14.0, 8.0), Vec3::new(9.5, 14.0, 8.0), 1.0, GOG_FR);
-    g.draw_cylinder(Vec3::new(10.5, 14.0, 8.0), Vec3::new(15.0, 14.0, 8.0), 1.0, GOG_FR);
-    g.draw_sphere(Vec3::new(7.2, 14.2, 7.8), 0.6, GOG_LN);
-    g.draw_sphere(Vec3::new(12.8, 14.2, 7.8), 0.6, GOG_LN);
+    // === Neck (at the bottom of the grid) ===
+    g.draw_cylinder(Vec3::new(16.0, 0.0, 16.0), Vec3::new(16.0, 10.0, 16.0), 5.0, SKIN);
 
-    // Hair (Moved to Back side)
-    g.draw_sphere(center + Vec3::new(0.0, 8.0, 5.0), 10.0, HAIR);
+    // === Base Skull / Head Shape ===
+    g.draw_sphere(center + Vec3::Y * 3.0, 13.0, SKIN);           // Main head
+    g.draw_sphere(center + Vec3::new(0.0, 8.0, 0.0), 11.5, SKIN); // Upper cranium
 
-    let pal: Vec<[f32; 4]> = base_palette().iter().map(|(c, _, _)| c.to_linear().to_f32_array()).collect();
+    // === Jaw / Chin (front = -Z) ===
+    g.draw_sphere(center + Vec3::new(0.0, -4.0, -3.0), 8.0, SKIN); // Lower face
+    g.draw_sphere(center + Vec3::new(0.0, -6.0, -5.0), 6.0, SKIN); // Chin
+
+    // === Eyes ===
+    g.draw_sphere(Vec3::new(10.0, 21.0, 4.5), 3.2, EYE_W);   // Left eye white
+    g.draw_sphere(Vec3::new(22.0, 21.0, 4.5), 3.2, EYE_W);   // Right eye white
+    g.draw_sphere(Vec3::new(10.0, 21.0, 2.5), 1.8, IRIS);    // Left iris
+    g.draw_sphere(Vec3::new(22.0, 21.0, 2.5), 1.8, IRIS);    // Right iris
+    // Eye highlights
+    g.draw_sphere(Vec3::new(9.2, 21.8, 1.5), 0.7, EYE_W);
+    g.draw_sphere(Vec3::new(21.2, 21.8, 1.5), 0.7, EYE_W);
+
+    // === Eyebrows (thin, flush with the skin — only 1 voxel tall) ===
+    g.fill(7, 24, 3, 13, 24, 5, BROW);    // Left brow
+    g.fill(19, 24, 3, 25, 24, 5, BROW);   // Right brow
+
+    // === Nose ===
+    g.fill(14, 16, 2, 18, 20, 5, SKIN);                        // Nose bridge
+    g.draw_sphere(Vec3::new(16.0, 16.0, 1.0), 2.5, SKIN);     // Nose tip
+
+    // === Mouth (single simple smile using darker skin tone) ===
+    g.fill(11, 12, 4, 21, 13, 6, SKIN_SH);   // Subtle closed-mouth smile line
+
+    // === Ears ===
+    g.draw_sphere(Vec3::new(2.0, 18.0, 16.0), 4.0, SKIN);   // Left ear
+    g.draw_sphere(Vec3::new(30.0, 18.0, 16.0), 4.0, SKIN);  // Right ear
+
+    // === Hair (full coverage — no bald spot) ===
+    // Back of head
+    g.draw_sphere(center + Vec3::new(0.0, 10.0, 6.0), 13.5, HAIR);
+    // Full top coverage (overlapping spheres to eliminate the bald patch)
+    g.draw_sphere(center + Vec3::new(0.0, 14.0, 0.0), 12.0, HAIR);  // Crown
+    g.draw_sphere(center + Vec3::new(-5.0, 13.0, 2.0), 8.0, HAIR);  // Left top
+    g.draw_sphere(center + Vec3::new(5.0, 13.0, 2.0), 8.0, HAIR);   // Right top
+    g.draw_sphere(center + Vec3::new(0.0, 12.0, -4.0), 9.0, HAIR);  // Front hairline
+    // Side coverage
+    g.draw_sphere(center + Vec3::new(-8.0, 8.0, 3.0), 7.0, HAIR);   // Left side
+    g.draw_sphere(center + Vec3::new(8.0, 8.0, 3.0), 7.0, HAIR);    // Right side
+    // Messy top tufts for character
+    g.draw_sphere(center + Vec3::new(-3.0, 16.0, -2.0), 5.0, HAIR);
+    g.draw_sphere(center + Vec3::new(4.0, 17.0, 0.0), 4.5, HAIR);
+    g.draw_sphere(center + Vec3::new(0.0, 17.0, 3.0), 4.0, HAIR);
+
+    let pal: Vec<[f32; 4]> = base_palette()
+        .iter()
+        .map(|(c, _, _)| c.to_linear().to_f32_array())
+        .collect();
+
     g.generate_mesh(V, &pal)
 }
 
@@ -362,53 +404,140 @@ pub fn build_leg_mesh() -> Mesh {
 }
 
 // ========================================================
-// MECH — EXISTING PIECES (Keep for now, rescale later)
+// MECH SUIT — Revamped "Tempest Mk.II" Heavy Exosuit
+// Each piece returns Vec<(offset, size, palette_index)>
+// Palette: 0=Gunmetal, 1=GunmetalDark, 2=GunmetalLight,
+//          3=HazardOrange, 4=VisorCyan, 5=LampYellow,
+//          6=ExhaustGlow, 7=HydraulicDark, 8=RivetSteel
 // ========================================================
 
 pub fn mech_helmet() -> Vec<(Vec3, Vec3, usize)> {
     vec![
-        (Vec3::new(0.0, 0.025, 0.0), Vec3::new(0.35, 0.35, 0.35), 0),   // Main helmet frame
-        (Vec3::new(0.0, 0.15, 0.0),  Vec3::new(0.20, 0.10, 0.30), 1),   // Top detail
-        (Vec3::new(-0.16, 0.025, 0.0), Vec3::new(0.06, 0.15, 0.20), 1), // Ear piece L
-        (Vec3::new(0.16, 0.025, 0.0),  Vec3::new(0.06, 0.15, 0.20), 1), // Ear piece R
-        (Vec3::new(0.0, 0.04, -0.16),  Vec3::new(0.28, 0.10, 0.05), 4), // Visor
-        (Vec3::new(0.0, -0.12, -0.10), Vec3::new(0.25, 0.08, 0.15), 2), // Jaw plate
+        // Main shell — scaled up to cover the new larger head + neck
+        (Vec3::new(0.0, 0.10, 0.0),  Vec3::new(0.50, 0.50, 0.48), 0),   // Main helmet shell
+        (Vec3::new(0.0, 0.38, 0.0),  Vec3::new(0.30, 0.12, 0.35), 1),   // Top ridge / mohawk rail
+        (Vec3::new(0.0, 0.42, 0.0),  Vec3::new(0.08, 0.06, 0.28), 3),   // Hazard stripe on top
+        // Side armor / ear guards
+        (Vec3::new(-0.23, 0.10, 0.0), Vec3::new(0.08, 0.22, 0.28), 1),  // Ear plate L
+        (Vec3::new(0.23, 0.10, 0.0),  Vec3::new(0.08, 0.22, 0.28), 1),  // Ear plate R
+        // Visor — wide glowing slit
+        (Vec3::new(0.0, 0.14, -0.22), Vec3::new(0.38, 0.10, 0.06), 4),  // Main visor
+        (Vec3::new(0.0, 0.14, -0.24), Vec3::new(0.32, 0.06, 0.02), 4),  // Inner visor glow
+        // Jaw / chin guard
+        (Vec3::new(0.0, -0.08, -0.14), Vec3::new(0.34, 0.12, 0.18), 2), // Chin plate
+        // Cheek vents
+        (Vec3::new(-0.18, 0.02, -0.16), Vec3::new(0.06, 0.08, 0.04), 7), // Vent L
+        (Vec3::new(0.18, 0.02, -0.16),  Vec3::new(0.06, 0.08, 0.04), 7), // Vent R
+        // Brow ridge
+        (Vec3::new(0.0, 0.22, -0.20), Vec3::new(0.40, 0.06, 0.08), 1),  // Brow plate
     ]
 }
 
 pub fn mech_chest() -> Vec<(Vec3, Vec3, usize)> {
     vec![
-        (Vec3::new(0.0, 0.0, 0.0),    Vec3::new(0.48, 0.65, 0.42), 0), // Main chest plate
-        (Vec3::new(0.0, 0.05, -0.18), Vec3::new(0.38, 0.45, 0.10), 2), // Front reinforced plate
-        (Vec3::new(0.0, 0.15, -0.22), Vec3::new(0.25, 0.12, 0.04), 3), // Chest logo/hazard
+        // Primary chest plate
+        (Vec3::new(0.0, 0.0, 0.0),    Vec3::new(0.55, 0.72, 0.48), 0),  // Main chest hull
+        // Layered front armor
+        (Vec3::new(0.0, 0.08, -0.22), Vec3::new(0.44, 0.52, 0.08), 2),  // Front plate
+        (Vec3::new(0.0, 0.18, -0.26), Vec3::new(0.30, 0.16, 0.04), 3),  // Hazard chevron
+        // Collar / neck guard
+        (Vec3::new(0.0, 0.38, -0.10), Vec3::new(0.42, 0.08, 0.30), 1),  // Collar ring
+        // Pectoral ridges
+        (Vec3::new(-0.14, 0.10, -0.24), Vec3::new(0.14, 0.28, 0.04), 1), // Pec plate L
+        (Vec3::new(0.14, 0.10, -0.24),  Vec3::new(0.14, 0.28, 0.04), 1), // Pec plate R
+        // Rivet lines
+        (Vec3::new(-0.20, 0.0, -0.24), Vec3::new(0.04, 0.50, 0.02), 8),  // Rivet strip L
+        (Vec3::new(0.20, 0.0, -0.24),  Vec3::new(0.04, 0.50, 0.02), 8),  // Rivet strip R
+        // Ab plates
+        (Vec3::new(0.0, -0.20, -0.22), Vec3::new(0.30, 0.18, 0.06), 7),  // Lower ab guard
     ]
 }
 
 pub fn mech_reactor() -> Vec<(Vec3, Vec3, usize)> {
     vec![
-        (Vec3::new(0.0, 0.0, 0.22),     Vec3::new(0.35, 0.45, 0.20), 1), // Core housing
-        (Vec3::new(0.0, 0.18, 0.25),    Vec3::new(0.38, 0.08, 0.22), 0), // Upper cowl
-        (Vec3::new(-0.12, -0.15, 0.28), Vec3::new(0.12, 0.15, 0.12), 7), // Hydraulic L
-        (Vec3::new(0.12, -0.15, 0.28),  Vec3::new(0.12, 0.15, 0.12), 7), // Hydraulic R
+        // Core reactor housing
+        (Vec3::new(0.0, 0.0, 0.26),     Vec3::new(0.40, 0.50, 0.22), 1),  // Main housing
+        // Upper cowl / intake
+        (Vec3::new(0.0, 0.22, 0.28),    Vec3::new(0.44, 0.10, 0.24), 0),  // Upper cowl
+        // Exhaust ports
+        (Vec3::new(-0.14, -0.18, 0.32), Vec3::new(0.10, 0.14, 0.10), 7),  // Exhaust L
+        (Vec3::new(0.14, -0.18, 0.32),  Vec3::new(0.10, 0.14, 0.10), 7),  // Exhaust R
+        // Reactor glow core
+        (Vec3::new(0.0, 0.04, 0.34),    Vec3::new(0.12, 0.12, 0.04), 6),  // Glow center
+        // Side vents
+        (Vec3::new(-0.18, 0.08, 0.30),  Vec3::new(0.04, 0.20, 0.08), 8),  // Vent L
+        (Vec3::new(0.18, 0.08, 0.30),   Vec3::new(0.04, 0.20, 0.08), 8),  // Vent R
+        // Spine column
+        (Vec3::new(0.0, 0.10, 0.22),    Vec3::new(0.06, 0.40, 0.04), 7),  // Spine
     ]
 }
 
 pub fn mech_shoulder_left() -> Vec<(Vec3, Vec3, usize)> {
-    vec![(Vec3::new(-0.1, 0.25, 0.0), Vec3::new(0.45, 0.18, 0.42), 0)]
+    vec![
+        // Main shoulder pauldron
+        (Vec3::new(-0.12, 0.28, 0.0),  Vec3::new(0.52, 0.22, 0.48), 0),
+        // Top ridge
+        (Vec3::new(-0.12, 0.40, 0.0),  Vec3::new(0.38, 0.06, 0.36), 1),
+        // Hazard stripe
+        (Vec3::new(-0.12, 0.32, -0.18), Vec3::new(0.20, 0.08, 0.04), 3),
+        // Under-shoulder hydraulic
+        (Vec3::new(-0.08, 0.16, 0.0),  Vec3::new(0.10, 0.08, 0.14), 7),
+    ]
 }
 
 pub fn mech_shoulder_right() -> Vec<(Vec3, Vec3, usize)> {
-    vec![(Vec3::new(0.1, 0.25, 0.0), Vec3::new(0.45, 0.18, 0.42), 0)]
+    vec![
+        (Vec3::new(0.12, 0.28, 0.0),  Vec3::new(0.52, 0.22, 0.48), 0),
+        (Vec3::new(0.12, 0.40, 0.0),  Vec3::new(0.38, 0.06, 0.36), 1),
+        // Lamp / spotlight on right shoulder
+        (Vec3::new(0.12, 0.34, -0.18), Vec3::new(0.10, 0.08, 0.06), 5),
+        (Vec3::new(0.08, 0.16, 0.0),  Vec3::new(0.10, 0.08, 0.14), 7),
+    ]
 }
 
 pub fn mech_gauntlet() -> Vec<(Vec3, Vec3, usize)> {
-    vec![(Vec3::new(0.0, -0.5, 0.0), Vec3::new(0.38, 0.55, 0.38), 0)]
+    vec![
+        // Main gauntlet shell
+        (Vec3::new(0.0, -0.48, 0.0), Vec3::new(0.34, 0.50, 0.34), 0),
+        // Wrist guard / bracer
+        (Vec3::new(0.0, -0.22, 0.0), Vec3::new(0.38, 0.14, 0.38), 2),
+        // Knuckle plate
+        (Vec3::new(0.0, -0.70, -0.10), Vec3::new(0.30, 0.10, 0.12), 1),
+        // Hydraulic lines on forearm
+        (Vec3::new(0.12, -0.38, 0.10), Vec3::new(0.04, 0.30, 0.04), 7),
+        (Vec3::new(-0.12, -0.38, 0.10), Vec3::new(0.04, 0.30, 0.04), 7),
+    ]
 }
 
 pub fn mech_leg_armor() -> Vec<(Vec3, Vec3, usize)> {
     vec![
-        (Vec3::new(0.0, 0.05, -0.08),  Vec3::new(0.24, 0.45, 0.10), 0), // Shin guard
-        (Vec3::new(0.0, -0.15, -0.12), Vec3::new(0.22, 0.18, 0.14), 2), // Knee plating
+        // Thigh plate (front)
+        (Vec3::new(0.0, 0.15, -0.10), Vec3::new(0.26, 0.35, 0.08), 0),
+        // Knee cap
+        (Vec3::new(0.0, -0.10, -0.14), Vec3::new(0.24, 0.22, 0.16), 2),
+        // Knee cap accent
+        (Vec3::new(0.0, -0.10, -0.18), Vec3::new(0.14, 0.10, 0.04), 3),
+        // Shin guard
+        (Vec3::new(0.0, -0.32, -0.10), Vec3::new(0.22, 0.28, 0.08), 0),
+        // Side hydraulics
+        (Vec3::new(0.10, -0.05, 0.06), Vec3::new(0.04, 0.50, 0.04), 7),
+        (Vec3::new(-0.10, -0.05, 0.06), Vec3::new(0.04, 0.50, 0.04), 7),
     ]
 }
 
+pub fn mech_boot() -> Vec<(Vec3, Vec3, usize)> {
+    vec![
+        // Main boot shell — wraps around the foot
+        (Vec3::new(0.0, -0.80, -0.04), Vec3::new(0.30, 0.22, 0.40), 0),
+        // Armored toe cap
+        (Vec3::new(0.0, -0.82, -0.20), Vec3::new(0.28, 0.18, 0.12), 2),
+        // Heel guard
+        (Vec3::new(0.0, -0.82, 0.14), Vec3::new(0.26, 0.16, 0.10), 1),
+        // Ankle ring / collar
+        (Vec3::new(0.0, -0.68, -0.04), Vec3::new(0.32, 0.08, 0.36), 1),
+        // Sole plate (thick reinforced sole)
+        (Vec3::new(0.0, -0.92, -0.06), Vec3::new(0.32, 0.06, 0.44), 7),
+        // Toe accent
+        (Vec3::new(0.0, -0.84, -0.24), Vec3::new(0.16, 0.06, 0.04), 3),
+    ]
+}
