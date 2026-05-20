@@ -23,6 +23,7 @@ impl Plugin for WorldPlugin {
             tree_generator::chunk_vegetation_system,
             tree_generator::start_tree_generation,
             tree_generator::complete_tree_generation,
+            tree_generator::despawn_trees_near_buildings,
             make_water_transparent,
             sync_chunk_colliders,
         ).chain())

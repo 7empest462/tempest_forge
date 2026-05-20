@@ -233,6 +233,11 @@ fn setup_player(
                 max_slope_climb_angle: 55.0_f32.to_radians(),
                 min_slope_slide_angle: 70.0_f32.to_radians(),
                 snap_to_ground: Some(bevy_rapier3d::prelude::CharacterLength::Relative(0.2)),
+                autostep: Some(bevy_rapier3d::prelude::CharacterAutostep {
+                    max_height: bevy_rapier3d::prelude::CharacterLength::Absolute(1.05),
+                    min_width: bevy_rapier3d::prelude::CharacterLength::Absolute(0.3),
+                    include_dynamic_bodies: false,
+                }),
                 ..default()
             },
             bevy_rapier3d::prelude::Restitution::coefficient(0.0),
@@ -292,7 +297,7 @@ fn setup_player(
                 PlayerArm { side: -1.0, animation_timer: 0.0 },
                 Mesh3d(arm_mesh_l.clone()),
                 MeshMaterial3d(character_mat.clone()),
-                Transform::from_xyz(-0.28, -0.55, -0.1).with_rotation(Quat::from_rotation_y(std::f32::consts::PI)), // Rotate 180
+                Transform::from_xyz(-0.28, -0.55, -0.1),
                 Visibility::default(),
                 InheritedVisibility::default(),
             )).with_children(|arm| {
@@ -320,7 +325,7 @@ fn setup_player(
                 PlayerArm { side: 1.0, animation_timer: 0.0 },
                 Mesh3d(arm_mesh_r.clone()),
                 MeshMaterial3d(character_mat.clone()),
-                Transform::from_xyz(0.28, -0.55, -0.1).with_rotation(Quat::from_rotation_y(std::f32::consts::PI)), // Rotate 180
+                Transform::from_xyz(0.28, -0.55, -0.1),
                 Visibility::default(),
                 InheritedVisibility::default(),
             )).with_children(|arm| {
@@ -378,7 +383,7 @@ fn setup_player(
             PlayerBodyArea,
             Mesh3d(body_mesh.clone()),
             MeshMaterial3d(character_mat.clone()),
-            Transform::from_xyz(0.0, 1.25, 0.0).with_rotation(Quat::from_rotation_y(std::f32::consts::PI)), // Rotate 180
+            Transform::from_xyz(0.0, 1.25, 0.0),
             Visibility::default(),
             InheritedVisibility::default(),
         )).with_children(|body| {
@@ -426,7 +431,7 @@ fn setup_player(
                 PlayerLeg { side },
                 Mesh3d(leg_mesh.clone()),
                 MeshMaterial3d(character_mat.clone()),
-                Transform::from_xyz(side * 0.14, 0.475, 0.0).with_rotation(Quat::from_rotation_y(std::f32::consts::PI)), // Rotate 180
+                Transform::from_xyz(side * 0.14, 0.475, 0.0),
                 Visibility::default(),
                 InheritedVisibility::default(),
             )).with_children(|leg| {

@@ -47,4 +47,5 @@ pub enum AIState {
     Chasing,
     Fleeing,
     Sleeping,
+    Sitting,
 }

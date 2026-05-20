@@ -11,9 +11,20 @@ pub struct LaserImpactEffect(pub Handle<EffectAsset>);
 #[derive(Resource)]
 pub struct ThrusterEffect(pub Handle<EffectAsset>);
 
+#[derive(Resource)]
+pub struct ChimneySmokeEffect(pub Handle<EffectAsset>);
+
+#[derive(Resource)]
+pub struct BlacksmithSparkEffect(pub Handle<EffectAsset>);
+
 impl Plugin for ParticleEffectsPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, (setup_laser_effect, setup_thruster_effect));
+        app.add_systems(Startup, (
+            setup_laser_effect,
+            setup_thruster_effect,
+            setup_chimney_smoke_effect,
+            setup_blacksmith_spark_effect,
+        ));
         app.add_systems(Update, spawn_laser_particles);
     }
 }
@@ -120,4 +131,90 @@ fn setup_thruster_effect(
 
     let handle = effects.add(effect);
     commands.insert_resource(ThrusterEffect(handle));
+}
+
+fn setup_chimney_smoke_effect(
+    mut commands: Commands,
+    mut effects: ResMut<Assets<EffectAsset>>,
+) {
+    let mut color_gradient = bevy_hanabi::Gradient::new();
+    color_gradient.add_key(0.0, Vec4::new(0.45, 0.45, 0.47, 0.45)); // Warm chimney grey smoke
+    color_gradient.add_key(0.5, Vec4::new(0.55, 0.55, 0.55, 0.22)); // Fades out
+    color_gradient.add_key(1.0, Vec4::new(0.65, 0.65, 0.65, 0.0)); // Disappears
+
+    let mut size_gradient = bevy_hanabi::Gradient::new();
+    size_gradient.add_key(0.0, Vec3::splat(0.18)); // Base chimney opening size
+    size_gradient.add_key(0.5, Vec3::splat(0.42)); // Spreads out
+    size_gradient.add_key(1.0, Vec3::splat(0.72));
+
+    let mut module = Module::default();
+    let init_pos = SetPositionSphereModifier {
+        center: module.lit(Vec3::ZERO),
+        radius: module.lit(0.06),
+        dimension: ShapeDimension::Volume,
+    };
+    
+    // Slow drift upwards with slight random sway
+    let init_vel = SetVelocitySphereModifier {
+        center: module.lit(Vec3::new(0.0, 1.4, 0.0)),
+        speed: module.lit(0.75),
+    };
+
+    let init_lifetime = SetAttributeModifier::new(Attribute::LIFETIME, module.lit(2.6));
+
+    let spawner = SpawnerSettings::rate(8.0.into()).with_starts_active(true);
+
+    let effect = EffectAsset::new(4096, spawner, module)
+        .with_name("chimney_smoke")
+        .init(init_pos)
+        .init(init_vel)
+        .init(init_lifetime)
+        .render(ColorOverLifetimeModifier { gradient: color_gradient, ..default() })
+        .render(SizeOverLifetimeModifier { gradient: size_gradient, screen_space_size: false });
+
+    let handle = effects.add(effect);
+    commands.insert_resource(ChimneySmokeEffect(handle));
+}
+
+fn setup_blacksmith_spark_effect(
+    mut commands: Commands,
+    mut effects: ResMut<Assets<EffectAsset>>,
+) {
+    let mut color_gradient = bevy_hanabi::Gradient::new();
+    color_gradient.add_key(0.0, Vec4::new(4.5, 2.5, 0.5, 1.0)); // Ultra bright HDR golden-white core
+    color_gradient.add_key(0.4, Vec4::new(3.0, 1.0, 0.0, 0.85)); // Deep warm orange glowing sparks
+    color_gradient.add_key(1.0, Vec4::new(1.2, 0.0, 0.0, 0.0)); // Fade out red hot embers
+
+    let mut size_gradient = bevy_hanabi::Gradient::new();
+    size_gradient.add_key(0.0, Vec3::splat(0.09));
+    size_gradient.add_key(1.0, Vec3::splat(0.015));
+
+    let mut module = Module::default();
+    
+    let init_pos = SetPositionSphereModifier {
+        center: module.lit(Vec3::ZERO),
+        radius: module.lit(0.03),
+        dimension: ShapeDimension::Surface,
+    };
+
+    let init_vel = SetVelocitySphereModifier {
+        center: module.lit(Vec3::ZERO),
+        speed: module.lit(5.2),
+    };
+
+    let init_lifetime = SetAttributeModifier::new(Attribute::LIFETIME, module.lit(0.48));
+
+    // A single burst spawner that triggers immediately when spawned
+    let spawner = SpawnerSettings::once(45.0.into()).with_starts_active(true);
+
+    let effect = EffectAsset::new(8192, spawner, module)
+        .with_name("blacksmith_spark")
+        .init(init_pos)
+        .init(init_vel)
+        .init(init_lifetime)
+        .render(ColorOverLifetimeModifier { gradient: color_gradient, ..default() })
+        .render(SizeOverLifetimeModifier { gradient: size_gradient, screen_space_size: false });
+
+    let handle = effects.add(effect);
+    commands.insert_resource(BlacksmithSparkEffect(handle));
 }

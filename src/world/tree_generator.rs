@@ -6,6 +6,7 @@ use futures_lite::future;
 use crate::voxel::chunk::BlockType;
 use crate::world::noise_generator::NoiseGenerator;
 use crate::player::combat::{Health, Hittable};
+use crate::world::settlement::{SettlementRegistry, SettlementBuilding};
 
 #[derive(Component)]
 pub struct TreeEntity;
@@ -80,6 +81,7 @@ pub fn chunk_vegetation_system(
     query: Query<(Entity, &Chunk<NoiseGenerator>), Without<Decorated>>,
     voxel_world: VoxelWorld<NoiseGenerator>,
     noise_gen: Res<NoiseGenerator>,
+    registry: Res<SettlementRegistry>,
 ) {
     for (entity, chunk_comp) in query.iter() {
         let chunk_key = chunk_comp.position;
@@ -102,6 +104,11 @@ pub fn chunk_vegetation_system(
             let terrain = noise_gen.get_terrain(world_x as f32, world_z as f32);
             let adjusted_surface = noise_gen.get_adjusted_surface_height(world_x as f32, world_z as f32);
             
+            // Check if near any house/building (within 7.5 meters)
+            if is_near_settlement_building(Vec3::new(world_x as f32, adjusted_surface, world_z as f32), &registry) {
+                continue;
+            }
+
             // 1. Vertical Filtering: Only spawn if the surface belongs to THIS vertical chunk
             let surface_y = adjusted_surface.floor() as i32;
             let chunk_y = (surface_y as f32 / 16.0).floor() as i32;
@@ -174,6 +181,11 @@ pub fn chunk_vegetation_system(
                 Vec3::new(pos_2d.x as f32, 100.0, pos_2d.y as f32),
                 &voxel_world,
             ) else { continue };
+
+            // Check if near any house/building (within 7.5 meters)
+            if is_near_settlement_building(Vec3::new(pos_2d.x as f32, height, pos_2d.y as f32), &registry) {
+                continue;
+            }
 
             // Only spawn if the height is within THIS chunk's vertical bounds
             if (height / 16.0).floor() as i32 != chunk_key.y {
@@ -431,4 +443,70 @@ fn scatter_candidates(chunk_2d: IVec3, count: usize, rng: &mut FastRng) -> Vec<I
         let cz = base_z + rng.i32(0..16);
         IVec2::new(cx, cz)
     }).collect()
+}
+
+fn is_near_settlement_building(pos: Vec3, registry: &SettlementRegistry) -> bool {
+    const BUILDING_OFFSETS: [(f32, f32); 8] = [
+        (0.0, 16.0),   // Tavern
+        (22.0, 6.0),   // Shop
+        (-22.0, 6.0),  // Forge
+        (0.0, -26.0),  // Farm
+        (18.0, -18.0), // House 1
+        (-18.0, -18.0),// House 2
+        (26.0, -26.0), // Guard Tower
+        (0.0, 0.0),    // Plaza / Well
+    ];
+    
+    for chunk_pos in registry.positions.iter() {
+        let town_center_x = (chunk_pos.x * 16 + 8) as f32;
+        let town_center_z = (chunk_pos.z * 16 + 8) as f32;
+        
+        for &(dx, dz) in BUILDING_OFFSETS.iter() {
+            let bx = town_center_x + dx;
+            let bz = town_center_z + dz;
+            let dist_sq = (pos.x - bx) * (pos.x - bx) + (pos.z - bz) * (pos.z - bz);
+            // 7.5 meters squared = 56.25
+            if dist_sq < 56.25 {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+pub fn despawn_trees_near_buildings(
+    mut commands: Commands,
+    new_buildings: Query<&SettlementBuilding, Added<SettlementBuilding>>,
+    all_buildings: Query<&SettlementBuilding>,
+    new_trees: Query<(Entity, &Transform), (Added<TreeEntity>, With<TreeEntity>)>,
+    all_trees: Query<(Entity, &Transform), With<TreeEntity>>,
+) {
+    let mut trees_to_despawn = std::collections::HashSet::new();
+
+    // Case 1: New building spawned, despawn any nearby existing trees
+    for b in new_buildings.iter() {
+        for (tree_entity, tree_transform) in all_trees.iter() {
+            let dist_sq = b.center.distance_squared(tree_transform.translation);
+            if dist_sq < 56.25 {
+                trees_to_despawn.insert(tree_entity);
+            }
+        }
+    }
+
+    // Case 2: New tree spawned (e.g. async generation finished), double check it is not near any building
+    for (tree_entity, tree_transform) in new_trees.iter() {
+        for b in all_buildings.iter() {
+            let dist_sq = b.center.distance_squared(tree_transform.translation);
+            if dist_sq < 56.25 {
+                trees_to_despawn.insert(tree_entity);
+                break;
+            }
+        }
+    }
+
+    for tree_entity in trees_to_despawn {
+        if let Ok(mut entity_cmd) = commands.get_entity(tree_entity) {
+            entity_cmd.despawn();
+        }
+    }
 }

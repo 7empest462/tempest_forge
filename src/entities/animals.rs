@@ -8,6 +8,7 @@ use crate::player::combat::{Health, Hittable};
 use crate::world::env::TimeOfDay;
 use rand::RngExt;
 use super::{Creature, CreatureData, Species, AIState};
+use super::npc::NPC;
 
 pub struct AnimalsPlugin;
 
@@ -160,15 +161,17 @@ fn spawn_animals(
 fn animal_ai(
     time: Res<Time>,
     voxel_world: VoxelWorld<NoiseGenerator>,
-    player_query: Query<(Entity, &Transform), With<Player>>,
+    player_query: Query<(Entity, &Transform), (With<Player>, Without<Animal>)>,
     mut query: Query<(Entity, &mut Transform, &mut Creature, &CreatureData), (With<Animal>, Without<Player>)>,
     mut commands: Commands,
     time_of_day: Res<TimeOfDay>,
     collider_query: Query<&Transform, (With<bevy_rapier3d::prelude::Collider>, Without<Animal>)>,
+    npc_query: Query<(Entity, &Transform), (With<NPC>, Without<Animal>)>,
 ) {
     let dt = time.delta_secs();
     let player_data = player_query.iter().next();
     let player_pos = player_data.map(|(_, t)| t.translation).unwrap_or(Vec3::ZERO);
+    let player_entity = player_data.map(|(e, _)| e).unwrap_or(Entity::PLACEHOLDER);
 
     // 1. Collect data for behavioral interactions (Predators and Prey)
     let predators: Vec<_> = query.iter()
@@ -176,10 +179,15 @@ fn animal_ai(
         .map(|(_, t, _, _)| t.translation)
         .collect();
 
-    let prey: Vec<_> = query.iter()
+    let mut prey: Vec<_> = query.iter()
         .filter(|(_, _, c, _)| matches!(c.species, Species::Pig | Species::Chicken | Species::Deer))
         .map(|(e, t, _, _)| (e, t.translation))
         .collect();
+
+    // Wolves also prey on helpless town citizens!
+    for (npc_entity, npc_trans) in npc_query.iter() {
+        prey.push((npc_entity, npc_trans.translation));
+    }
 
     let cur_time = time.elapsed_secs();
 
@@ -250,23 +258,36 @@ fn animal_ai(
                 }
             }
             Species::Spider | Species::Skeleton => {
-                // Hostile monsters: chase player
-                let dist_to_player = pos.distance(player_pos);
-                if dist_to_player < data.detection_radius {
+                // Hostile monsters: chase player or closest NPC
+                let mut target_entity = player_entity;
+                let mut target_pos = player_pos;
+                let mut closest_dist = pos.distance(player_pos);
+
+                // Check if any NPC is closer
+                for (npc_entity, npc_trans) in npc_query.iter() {
+                    let d = pos.distance(npc_trans.translation);
+                    if d < closest_dist {
+                        closest_dist = d;
+                        target_entity = npc_entity;
+                        target_pos = npc_trans.translation;
+                    }
+                }
+
+                if closest_dist < data.detection_radius {
                     creature.state = AIState::Chasing;
                     
-                    // Attack player
-                    if dist_to_player < 2.5 && cur_time - creature.last_attack_time > 1.5 {
-                        if let Some((p_entity, _)) = player_data {
-                            commands.entity(p_entity).insert(crate::player::combat::DamageEvent(5.0));
+                    // Attack target
+                    if closest_dist < 2.5 && cur_time - creature.last_attack_time > 1.5 {
+                        if target_entity != Entity::PLACEHOLDER {
+                            commands.entity(target_entity).insert(crate::player::combat::DamageEvent(5.0));
                             creature.last_attack_time = cur_time;
-                            println!("{:?} hit player!", creature.species);
+                            println!("{:?} hit target {:?}!", creature.species, target_entity);
                         }
                     }
 
-                    let mut dir = (player_pos - pos).normalize_or_zero();
+                    let mut dir = (target_pos - pos).normalize_or_zero();
                     
-                    // Smart AI: Circle the player slightly instead of moving in a straight line
+                    // Smart AI: Circle the target slightly
                     let time_offset = (entity.to_bits() as f32) % 10.0;
                     let circle_dir = Vec3::new(-dir.z, 0.0, dir.x);
                     let zig_zag = (cur_time * 2.0 + time_offset).sin() * 0.8;

@@ -3,10 +3,12 @@
 pub mod curve;
 pub mod brick;
 pub mod wall_constructor;
+pub mod arch;
 
 pub use curve::Curve;
 pub use brick::Brick;
 pub use wall_constructor::WallConstructor;
+pub use arch::{ArchBrick, ArchOpening, WallEndpoint, generate_arch, find_arch_openings, voussoir_spawn_delay, MAX_ARCH_SPAN, MIN_ARCH_SPAN, AUTO_ARCH_ENDPOINT_DIST};
 
 use bevy::prelude::*;
 use crate::voxel::BlockType;
@@ -20,12 +22,14 @@ pub struct ProceduralWallsPlugin;
 impl Plugin for ProceduralWallsPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<ProceduralWallBuilder>()
+            .init_resource::<ArchRegistry>()
             .add_systems(Update, (
                 update_wall_builder,
                 draw_wall_preview,
                 mine_procedural_bricks,
                 animate_brick_spawns,
                 carve_gateways,
+                detect_and_spawn_arches,
             ));
     }
 }
@@ -61,6 +65,22 @@ pub struct BrickSpawnAnimation {
 /// Marker component for each individual generated wall brick entity
 #[derive(Component)]
 pub struct ProceduralBrick;
+
+/// Marker component for voussoir (arch) bricks — sub-type of ProceduralBrick.
+/// Both components are present on arch bricks, so mining/health work automatically.
+#[derive(Component)]
+pub struct ProceduralArchBrick {
+    /// ID linking all voussoirs in the same arch together.
+    pub arch_id: u64,
+}
+
+/// Tracks all currently-live auto-detected arch openings so we don't re-spawn
+/// them every frame.
+#[derive(Resource, Default)]
+pub struct ArchRegistry {
+    /// Each entry is (left_foot_xz, right_foot_xz, root_entity).
+    pub arches: Vec<(bevy::math::Vec2, bevy::math::Vec2, Entity)>,
+}
 
 /// Handles curve point placement, undo, cancellation, and wall finalization.
 fn update_wall_builder(
@@ -333,6 +353,114 @@ fn update_wall_builder(
     }
 }
 
+// ---------------------------------------------------------------------------
+// Arch voussoir spawn helper (shared by carve_gateways and detect_and_spawn_arches)
+// ---------------------------------------------------------------------------
+
+fn spawn_arch_voussoirs(
+    opening: &ArchOpening,
+    arch_id: u64,
+    active_texture: &'static str,
+    parent: Option<Entity>,
+    commands: &mut Commands,
+    meshes: &mut ResMut<Assets<Mesh>>,
+    materials: &mut ResMut<Assets<StandardMaterial>>,
+    asset_server: &Res<AssetServer>,
+) {
+    let voussoirs = generate_arch(opening);
+    if voussoirs.is_empty() { return; }
+
+    let mut rng = fastrand::Rng::new();
+
+    // Slightly darker than regular wall bricks to visually differentiate the arch
+    let (base_r, base_g, base_b) = match active_texture {
+        "textures/solid_stone.png"     => (0.54, 0.54, 0.56),
+        "textures/solid_brick.png"     => (0.67, 0.39, 0.26),
+        "textures/solid_limestone.png" => (0.75, 0.72, 0.65),
+        _                              => (0.54, 0.42, 0.37),
+    };
+    let mortar_color = match active_texture {
+        "textures/solid_stone.png"     => Color::srgb(0.78, 0.78, 0.76),
+        "textures/solid_brick.png"     => Color::srgb(0.88, 0.86, 0.82),
+        "textures/solid_limestone.png" => Color::srgb(0.68, 0.66, 0.62),
+        _                              => Color::srgb(0.80, 0.80, 0.80),
+    };
+
+    for voussoir in &voussoirs {
+        let r_off = (rng.f32() - 0.5) * 0.10;
+        let g_off = (rng.f32() - 0.5) * 0.08;
+        let b_off = (rng.f32() - 0.5) * 0.08;
+        let brick_color = Color::srgba(
+            (base_r + r_off).clamp(0.0, 1.0),
+            (base_g + g_off).clamp(0.0, 1.0),
+            (base_b + b_off).clamp(0.0, 1.0),
+            1.0,
+        );
+
+        let delay = voussoir_spawn_delay(voussoir.arc_t);
+        let target_translation = voussoir.transform.translation;
+        let target_scale = voussoir.transform.scale;
+
+        let child = commands.spawn((
+            ProceduralBrick,
+            ProceduralArchBrick { arch_id },
+            crate::player::combat::Hittable,
+            crate::player::combat::Health::new(45.0), // arch bricks are slightly tougher
+            voussoir.transform.with_scale(Vec3::splat(0.01)),
+            bevy_rapier3d::prelude::Collider::cuboid(
+                target_scale.x / 2.0,
+                target_scale.y / 2.0,
+                target_scale.z / 2.0,
+            ),
+            BrickSpawnAnimation {
+                target_translation,
+                target_scale,
+                delay,
+                elapsed: 0.0,
+                duration: 0.42,
+            },
+            Visibility::default(),
+            InheritedVisibility::default(),
+        )).with_children(|parent| {
+            // Stone face
+            parent.spawn((
+                Mesh3d(meshes.add(Cuboid::from_size(Vec3::ONE))),
+                MeshMaterial3d(materials.add(StandardMaterial {
+                    base_color: brick_color,
+                    base_color_texture: Some(asset_server.load(active_texture)),
+                    perceptual_roughness: 0.90,
+                    metallic: 0.01,
+                    ..default()
+                })),
+                Transform {
+                    translation: Vec3::ZERO,
+                    scale: Vec3::new(1.02, 1.02, 1.05),
+                    ..default()
+                },
+            ));
+            // Mortar backing
+            parent.spawn((
+                Mesh3d(meshes.add(Cuboid::from_size(Vec3::ONE))),
+                MeshMaterial3d(materials.add(StandardMaterial {
+                    base_color: mortar_color,
+                    perceptual_roughness: 0.95,
+                    metallic: 0.0,
+                    ..default()
+                })),
+                Transform {
+                    translation: Vec3::ZERO,
+                    scale: Vec3::new(0.96, 0.96, 0.80),
+                    ..default()
+                },
+            ));
+        }).id();
+
+        if let Some(p) = parent {
+            commands.entity(p).add_child(child);
+        }
+    }
+}
+
 /// Renders a real-time holographic brick/curve blueprint projection in the game world
 fn draw_wall_preview(
     mut gizmos: Gizmos,
@@ -383,6 +511,40 @@ fn draw_wall_preview(
                 Isometry3d::new(brick.transform.translation, brick.transform.rotation),
                 Color::srgba(0.9, 0.65, 0.1, 0.42),
             );
+        }
+
+        // Draw holographic arch preview arcs over any detected gap between the
+        // preview wall endpoints and nearby existing bricks / the wall itself.
+        // We draw a simple gizmo semicircle for each valid opening.
+        // Check if the preview wall's two endpoints are close enough together to
+        // form an arch span — show a cyan holographic arch ghost.
+        if let (Some(&first_pt), Some(&last_pt)) = (
+            resampled_curve.points.first(),
+            resampled_curve.points.last(),
+        ) {
+            // Draw a gizmo arch between the two ends if they form a valid span.
+            let span_xz = Vec2::new(last_pt.x - first_pt.x, last_pt.z - first_pt.z);
+            let span = span_xz.length();
+            if span >= MIN_ARCH_SPAN && span <= MAX_ARCH_SPAN {
+                let left_y = crate::world::manager::find_ground_height(first_pt, &voxel_world).unwrap_or(first_pt.y) + builder.height;
+                let right_y = crate::world::manager::find_ground_height(last_pt, &voxel_world).unwrap_or(last_pt.y) + builder.height;
+                let opening = ArchOpening {
+                    left_foot:  first_pt.with_y(left_y),
+                    right_foot: last_pt.with_y(right_y),
+                };
+                let voussoirs = generate_arch(&opening);
+                for v in &voussoirs {
+                    gizmos.primitive_3d(
+                        &Cuboid::new(
+                            (v.transform.scale.x - 0.02).max(0.05),
+                            (v.transform.scale.y - 0.02).max(0.05),
+                            (v.transform.scale.z - 0.02).max(0.05),
+                        ),
+                        Isometry3d::new(v.transform.translation, v.transform.rotation),
+                        Color::srgba(0.4, 0.8, 1.0, 0.35), // cyan-ish arch ghost
+                    );
+                }
+            }
         }
     }
 }
@@ -552,6 +714,7 @@ fn carve_gateways(
     brick_query: Query<(Entity, &GlobalTransform, &Transform), With<ProceduralBrick>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    asset_server: Res<AssetServer>,
 ) {
     if ui_state.show_inventory || ui_state.show_pause_menu { return; }
     
@@ -587,6 +750,7 @@ fn carve_gateways(
     }
 
     if let Some((_entity, carve_pos, carve_rot)) = targeted_brick {
+        let active_texture = "textures/solid_stone.png";
         // Calculate the actual ground and top boundaries of the brick column
         let mut lowest_y = carve_pos.y;
         let mut highest_y = carve_pos.y;
@@ -687,6 +851,193 @@ fn carve_gateways(
             });
         });
 
-        println!("Carved Gate/Archway in Procedural Wall!");
+        // -----------------------------------------------------------------------
+        // Spawn a semicircular arch above the carved opening
+        // -----------------------------------------------------------------------
+        // Compute impost positions accounting for wall rotation
+        let rot_mat = bevy::math::Mat3::from_quat(carve_rot);
+        let left_offset  = rot_mat * Vec3::new(-1.2, 0.0, 0.0);
+        let right_offset = rot_mat * Vec3::new( 1.2, 0.0, 0.0);
+        let arch_opening = ArchOpening {
+            left_foot:  carve_pos.with_y(top_y) + left_offset,
+            right_foot: carve_pos.with_y(top_y) + right_offset,
+        };
+
+        // Unique ID for this arch (use top_y + position hash as rough unique key)
+        let arch_id = (carve_pos.x.to_bits() as u64)
+            .wrapping_add((carve_pos.z.to_bits() as u64) << 32)
+            .wrapping_add(top_y.to_bits() as u64);
+
+        spawn_arch_voussoirs(
+            &arch_opening,
+            arch_id,
+            active_texture,
+            None,
+            &mut commands,
+            &mut meshes,
+            &mut materials,
+            &asset_server,
+        );
+
+        println!("Carved Gate/Archway in Procedural Wall — arch spawned above!");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Auto-arch: detect close wall endpoints and bridge with an arch
+// ---------------------------------------------------------------------------
+
+/// Scans all `ProceduralBrick` entities each frame, finds wall endpoints that
+/// are close to each other but unconnected, and spawns bridging arches.
+fn detect_and_spawn_arches(
+    mut commands: Commands,
+    mut arch_registry: ResMut<ArchRegistry>,
+    brick_query: Query<(Entity, &GlobalTransform, &Transform, Option<&BrickSpawnAnimation>), (With<ProceduralBrick>, Without<ProceduralArchBrick>)>,
+    root_query: Query<Entity>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    asset_server: Res<AssetServer>,
+) {
+    struct BrickInfo {
+        pos: Vec3,
+        transform: Transform,
+    }
+
+    // Gather all brick positions and transforms
+    let mut bricks = Vec::new();
+    for (_entity, gt, transform, opt_anim) in brick_query.iter() {
+        let pos = if let Some(anim) = opt_anim {
+            anim.target_translation
+        } else {
+            gt.translation()
+        };
+        bricks.push(BrickInfo {
+            pos,
+            transform: *transform,
+        });
+    }
+
+    if bricks.len() < 2 { return; }
+
+    // 1. Group bricks into stable vertical columns by horizontal position (tolerance: 0.1m)
+    let mut columns: Vec<Vec<BrickInfo>> = Vec::new();
+    for brick in bricks {
+        let brick_xz = Vec2::new(brick.pos.x, brick.pos.z);
+        if let Some(col) = columns.iter_mut().find(|col| {
+            let col_xz = Vec2::new(col[0].pos.x, col[0].pos.z);
+            col_xz.distance(brick_xz) < 0.1
+        }) {
+            col.push(brick);
+        } else {
+            columns.push(vec![brick]);
+        }
+    }
+
+    // 2. Find the highest brick of each column to represent the column tops
+    let mut column_tops: Vec<(Vec3, Transform)> = Vec::new();
+    for col in &columns {
+        if let Some(highest_brick) = col.iter().max_by(|a, b| {
+            a.pos.y.partial_cmp(&b.pos.y).unwrap_or(std::cmp::Ordering::Equal)
+        }) {
+            column_tops.push((highest_brick.pos, highest_brick.transform));
+        }
+    }
+
+    // 3. Detect true wall endpoints using stable wall-tangent projection.
+    // A column is in the middle of a wall if it has neighbor columns in both directions
+    // along the wall's local tangent vector. If it lacks a neighbor on either side, it is an endpoint.
+    let mut endpoints: Vec<WallEndpoint> = Vec::new();
+    for &(ct_pos, ct_transform) in &column_tops {
+        let ct_xz = Vec2::new(ct_pos.x, ct_pos.z);
+        let tangent = ct_transform.rotation * Vec3::X;
+
+        let mut has_forward = false;
+        let mut has_backward = false;
+
+        for &(other_pos, _) in &column_tops {
+            if other_pos == ct_pos { continue; }
+            let other_xz = Vec2::new(other_pos.x, other_pos.z);
+            let dist = ct_xz.distance(other_xz);
+
+            // Look for neighbors within bridging / adjacency distance (1.2 meters)
+            if dist < 1.2 {
+                let disp = other_pos - ct_pos;
+                let dot = disp.dot(tangent);
+
+                if dot > 0.15 {
+                    has_forward = true;
+                } else if dot < -0.15 {
+                    has_backward = true;
+                }
+            }
+        }
+
+        if !(has_forward && has_backward) {
+            endpoints.push(WallEndpoint {
+                top_center: ct_pos,
+                bottom_center: Vec3::new(ct_pos.x, 0.0, ct_pos.z),
+                is_right_end: false,
+            });
+        }
+    }
+
+    // 4. Prune existing arches that are no longer supported by current endpoints.
+    // An arch is valid only if there is still an endpoint near its left foot AND an endpoint near its right foot.
+    let mut active_arches = Vec::new();
+    for (left_xz, right_xz, root) in arch_registry.arches.drain(..) {
+        let has_left = endpoints.iter().any(|ep| Vec2::new(ep.top_center.x, ep.top_center.z).distance(left_xz) < 0.6);
+        let has_right = endpoints.iter().any(|ep| Vec2::new(ep.top_center.x, ep.top_center.z).distance(right_xz) < 0.6);
+
+        if has_left && has_right && root_query.contains(root) {
+            active_arches.push((left_xz, right_xz, root));
+        } else {
+            // Despawn the orphaned arch and all of its voussoir children!
+            if root_query.contains(root) {
+                commands.entity(root).despawn();
+            }
+        }
+    }
+    arch_registry.arches = active_arches;
+
+    // 5. Find candidate arch openings from active endpoints.
+    let openings = find_arch_openings(&endpoints);
+
+    let active_texture = "textures/solid_stone.png";
+
+    for opening in openings {
+        let left_xz  = Vec2::new(opening.left_foot.x,  opening.left_foot.z);
+        let right_xz = Vec2::new(opening.right_foot.x, opening.right_foot.z);
+
+        // Check if an arch for this opening already exists in the registry.
+        let already_registered = arch_registry.arches.iter().any(|(l, r, _)| {
+            l.distance(left_xz) < 0.6 && r.distance(right_xz) < 0.6
+        });
+        if already_registered { continue; }
+
+        // Unique ID from foot positions.
+        let arch_id = (opening.left_foot.x.to_bits() as u64)
+            .wrapping_add((opening.left_foot.z.to_bits() as u64) << 16)
+            .wrapping_add((opening.right_foot.x.to_bits() as u64) << 32)
+            .wrapping_add((opening.right_foot.z.to_bits() as u64) << 48);
+
+        // Spawn a root entity at Identity so children world translations are correct!
+        let root = commands.spawn((
+            Transform::default(),
+            Visibility::default(),
+            InheritedVisibility::default(),
+        )).id();
+
+        spawn_arch_voussoirs(
+            &opening,
+            arch_id,
+            active_texture,
+            Some(root),
+            &mut commands,
+            &mut meshes,
+            &mut materials,
+            &asset_server,
+        );
+
+        arch_registry.arches.push((left_xz, right_xz, root));
     }
 }
