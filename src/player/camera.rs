@@ -512,6 +512,7 @@ fn player_move(
     
     let mut speed = if physics.flying { 20.0 } else { 8.0 };
     let mut in_water = false;
+    let mut submersion = 0.0;
     
     // Check for water physics (drag and buoyancy) using the dynamic simulated water
     if let Ok((water_sim, water_transform)) = water_query.single() {
@@ -519,8 +520,9 @@ fn player_move(
         let water_height = get_water_height(transform.translation.x, transform.translation.z, grid_center, water_sim);
         
         if transform.translation.y < water_height + 0.2 {
-            speed = 5.0; // Fixed swimming speed
+            speed = 5.0; // Swimming speed
             in_water = true;
+            submersion = water_height - transform.translation.y;
         }
     }
     physics.swimming = in_water;
@@ -529,13 +531,25 @@ fn player_move(
         speed *= 2.0;
     }
 
-    if move_dir != Vec3::ZERO {
-        let velocity = move_dir.normalize() * speed;
-        physics.velocity.x = velocity.x;
-        physics.velocity.z = velocity.z;
+    if in_water {
+        let target_vel = if move_dir != Vec3::ZERO {
+            move_dir.normalize() * speed
+        } else {
+            Vec3::ZERO
+        };
+        // Apply smooth horizontal drag (viscous acceleration/deceleration)
+        let accel_rate = if move_dir != Vec3::ZERO { 6.0 } else { 4.0 };
+        physics.velocity.x += (target_vel.x - physics.velocity.x) * accel_rate * time.delta_secs();
+        physics.velocity.z += (target_vel.z - physics.velocity.z) * accel_rate * time.delta_secs();
     } else {
-        physics.velocity.x = 0.0;
-        physics.velocity.z = 0.0;
+        if move_dir != Vec3::ZERO {
+            let velocity = move_dir.normalize() * speed;
+            physics.velocity.x = velocity.x;
+            physics.velocity.z = velocity.z;
+        } else {
+            physics.velocity.x = 0.0;
+            physics.velocity.z = 0.0;
+        }
     }
     
     // Read Rapier's native grounded state
@@ -556,15 +570,10 @@ fn player_move(
         }
     } else {
         if keys.pressed(KeyCode::Space) || gamepad_jump {
-            if in_water {
-                physics.velocity.y = 4.0; // Swim up
-            } else if physics.grounded {
+            if !in_water && physics.grounded {
                 physics.velocity.y = 8.0; // Slightly stronger jump to overcome friction
                 physics.grounded = false;
             }
-        }
-        if (keys.pressed(KeyCode::ControlLeft) || gamepad_dive) && in_water {
-            physics.velocity.y = -4.0; // Dive down
         }
     }
     
@@ -585,10 +594,22 @@ fn player_move(
     if !physics.flying && !physics.waiting_for_ground {
         let dt = time.delta_secs().min(0.05); // Tighter DT for stability
         if in_water {
-            // Sinking behavior: if not swimming up/down, sink slowly
-            if !keys.pressed(KeyCode::Space) && !keys.pressed(KeyCode::ControlLeft) && !gamepad_jump && !gamepad_dive {
-                physics.velocity.y -= 5.0 * dt; // Sink
-                physics.velocity.y = physics.velocity.y.max(-2.5); // Max sink speed
+            let is_swimming_up = keys.pressed(KeyCode::Space) || gamepad_jump;
+            let is_diving_down = keys.pressed(KeyCode::ControlLeft) || gamepad_dive;
+            
+            if is_swimming_up {
+                let target_y_vel = if keys.pressed(KeyCode::ShiftLeft) || gamepad_sprint { 6.0 } else { 4.0 };
+                physics.velocity.y += (target_y_vel - physics.velocity.y) * 6.0 * dt;
+            } else if is_diving_down {
+                let target_y_vel = if keys.pressed(KeyCode::ShiftLeft) || gamepad_sprint { -6.0 } else { -4.0 };
+                physics.velocity.y += (target_y_vel - physics.velocity.y) * 6.0 * dt;
+            } else {
+                // Natural Buoyancy & Bobbing (Spring-Mass-Damper model at chest-height of 1.2m)
+                let buoyancy_accel = ((submersion - 1.2) * 12.0).clamp(-8.0, 15.0);
+                physics.velocity.y += buoyancy_accel * dt;
+                
+                // Viscous fluid drag (damping)
+                physics.velocity.y += (0.0 - physics.velocity.y) * 3.0 * dt;
             }
         } else {
             if !physics.grounded {
