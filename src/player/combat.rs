@@ -544,15 +544,15 @@ fn update_laser_heat(
     }
     
     if *weapon == WeaponState::Laser && is_firing && !laser_heat.overheated {
-        // Heating up
-        laser_heat.current += 30.0 * dt;
+        // Heating up - slower rate (approx. 6.7 seconds before overheating)
+        laser_heat.current += 15.0 * dt;
         if laser_heat.current >= 100.0 {
             laser_heat.overheated = true;
             laser_heat.current = 100.0;
         }
     } else {
-        // Cooling down
-        laser_heat.current -= 15.0 * dt;
+        // Cooling down - faster rate (approx. 4.0 seconds to fully cool down)
+        laser_heat.current -= 25.0 * dt;
         if laser_heat.current <= 0.0 {
             laser_heat.current = 0.0;
             laser_heat.overheated = false;
