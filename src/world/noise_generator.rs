@@ -161,6 +161,47 @@ impl VoxelWorldConfig for NoiseGenerator {
         14
     }
 
+    fn chunk_lod(&self, chunk_pos: IVec3, _prev_lod: Option<u8>, player_pos: Vec3) -> u8 {
+        // Chunk size is 32 voxels. Center of the chunk in world-space:
+        let chunk_world_pos = Vec3::new(
+            (chunk_pos.x * 32 + 16) as f32,
+            (chunk_pos.y * 32 + 16) as f32,
+            (chunk_pos.z * 32 + 16) as f32,
+        );
+        let distance = player_pos.distance(chunk_world_pos);
+        
+        // LOD 0: within 6 chunks (192m) — maximum detail for gameplay and collision region
+        // LOD 1: between 6–10 chunks (192–320m) — moderate detail, halved mesh resolution
+        // LOD 2: beyond 10 chunks (320m+) — coarse backdrop, quarter mesh resolution
+        if distance < 192.0 {
+            0
+        } else if distance < 320.0 {
+            1
+        } else {
+            2
+        }
+    }
+
+    /// Reduce voxel data resolution for distant chunks to save CPU during generation.
+    /// LOD 0: full 34³ padded (32 interior + 2 padding), LOD 1: 18³, LOD 2: 10³.
+    fn chunk_data_shape(&self, lod_level: u8) -> UVec3 {
+        match lod_level {
+            0 => padded_chunk_shape_uniform(32), // 34³ — full resolution
+            1 => padded_chunk_shape_uniform(16), // 18³ — half resolution
+            _ => padded_chunk_shape_uniform(8),  // 10³ — quarter resolution
+        }
+    }
+
+    /// Reduce mesh resolution for distant chunks to slash vertex/triangle count.
+    /// Uses the same dimensions as data_shape so no extra downsampling pass is needed.
+    fn chunk_meshing_shape(&self, lod_level: u8) -> UVec3 {
+        match lod_level {
+            0 => padded_chunk_shape_uniform(32),
+            1 => padded_chunk_shape_uniform(16),
+            _ => padded_chunk_shape_uniform(8),
+        }
+    }
+
     fn voxel_texture(&self) -> Option<(String, u32)> {
         Some(("default_texture.png".into(), 13))
     }
