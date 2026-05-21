@@ -157,6 +157,10 @@ impl VoxelWorldConfig for NoiseGenerator {
     type MaterialIndex = u8;
     type ChunkUserBundle = ();
 
+    fn spawning_distance(&self) -> u32 {
+        14
+    }
+
     fn voxel_texture(&self) -> Option<(String, u32)> {
         Some(("default_texture.png".into(), 13))
     }
