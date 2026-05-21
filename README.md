@@ -7,6 +7,9 @@ Pilot a powerful **flying mech suit** and reshape entire worlds. Build intricate
 ![Tempest Forge Screenshot](assets/screenshot1.png) <!-- Replace with actual screenshots later -->
 ![Flying Mech](assets/mech_flight.gif)
 
+> [!NOTE]
+> **Development Note:** This project was developed offline for a long time before being published to GitHub. The current commit count does not fully reflect the total development effort.
+
 ---
 
 ## Features
