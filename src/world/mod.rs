@@ -19,14 +19,16 @@ impl Plugin for WorldPlugin {
         .add_plugins(bevy_procedural_tree::TreeProceduralGenerationPlugin)
         .init_resource::<tree_generator::TreeGenerator>()
         .add_systems(Update, (
-            settlement::spawn_settlements,
+            // Tree pipeline must be ordered (each step feeds the next)
             tree_generator::chunk_vegetation_system,
             tree_generator::start_tree_generation,
             tree_generator::complete_tree_generation,
             tree_generator::despawn_trees_near_buildings,
-            make_water_transparent,
-            sync_chunk_colliders,
         ).chain())
+        // These systems are independent — let Bevy run them in parallel
+        .add_systems(Update, settlement::spawn_settlements)
+        .add_systems(Update, make_water_transparent)
+        .add_systems(Update, sync_chunk_colliders)
         .add_systems(Startup, setup);
     }
 }
@@ -41,7 +43,7 @@ fn make_water_transparent(
         if let Some(mat) = materials.get_mut(mat_handle) {
             mat.alpha_mode = AlphaMode::Opaque; // Back to solid to fix X-ray
             *done = true;
-            println!("VOXEL WORLD MATERIAL SET TO OPAQUE");
+            info!("Voxel world material set to Opaque");
         }
     }
 }

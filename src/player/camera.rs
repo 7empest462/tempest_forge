@@ -583,11 +583,10 @@ fn player_move(
     }
 
     if physics.waiting_for_ground {
-        if let Some(height) = find_ground_height(transform.translation, &voxel_world) {
+        if let Some(_height) = find_ground_height(transform.translation, &voxel_world) {
             // Ground found: Lock physics
             physics.waiting_for_ground = false;
             physics.flying = false;
-            println!("SURFACE DETECTED at {}. Physical stability achieved.", height);
         }
     }
     
