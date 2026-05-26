@@ -126,20 +126,15 @@ fn ui_input_handler(
     let mut toggle_inv = input.just_pressed(KeyCode::KeyE);
     let mut toggle_pause = input.just_pressed(KeyCode::Escape);
 
-    // Auto-switch to Keyboard & Mouse if there's any key/mouse activity
-    if input.get_just_pressed().next().is_some() || mouse_input.get_just_pressed().next().is_some() {
-        if ui_state.input_scheme != InputScheme::KeyboardMouse {
-            ui_state.input_scheme = InputScheme::KeyboardMouse;
-            info!("Keyboard/Mouse input detected. Control scheme switched to Keyboard & Mouse.");
-        }
-    }
-    
+    // Check gamepad input FIRST — Steam Deck HID emits both keyboard and gamepad
+    // events simultaneously, so we must detect gamepad before the keyboard fallback.
+    let mut any_gamepad_activity = false;
     for gamepad in gamepads.iter() {
         if gamepad.just_pressed(GamepadButton::Start) { toggle_pause = true; }
         if gamepad.just_pressed(GamepadButton::DPadDown) { toggle_inv = true; }
 
-        // Auto-switch to Steam Deck/gamepad scheme if any key is pressed
-        if gamepad.just_pressed(GamepadButton::Start)
+        // Check if ANY gamepad button was pressed this frame
+        let gp_pressed = gamepad.just_pressed(GamepadButton::Start)
             || gamepad.just_pressed(GamepadButton::DPadDown)
             || gamepad.just_pressed(GamepadButton::South)
             || gamepad.just_pressed(GamepadButton::East)
@@ -154,11 +149,32 @@ fn ui_input_handler(
             || gamepad.just_pressed(GamepadButton::RightThumb)
             || gamepad.just_pressed(GamepadButton::DPadLeft)
             || gamepad.just_pressed(GamepadButton::DPadUp)
-            || gamepad.just_pressed(GamepadButton::DPadRight)
-        {
+            || gamepad.just_pressed(GamepadButton::DPadRight);
+
+        // Also detect analog stick movement as gamepad activity
+        let lx = gamepad.get(GamepadAxis::LeftStickX).unwrap_or(0.0);
+        let ly = gamepad.get(GamepadAxis::LeftStickY).unwrap_or(0.0);
+        let rx = gamepad.get(GamepadAxis::RightStickX).unwrap_or(0.0);
+        let ry = gamepad.get(GamepadAxis::RightStickY).unwrap_or(0.0);
+        let stick_active = lx.abs() > 0.15 || ly.abs() > 0.15 || rx.abs() > 0.15 || ry.abs() > 0.15;
+
+        if gp_pressed || stick_active {
+            any_gamepad_activity = true;
             if ui_state.input_scheme != InputScheme::SteamDeck {
                 ui_state.input_scheme = InputScheme::SteamDeck;
                 info!("Gamepad input detected. Control scheme switched to Steam Deck.");
+            }
+        }
+    }
+
+    // Only switch to Keyboard & Mouse if there was NO gamepad activity this frame.
+    // This prevents the Steam Deck's dual keyboard+gamepad HID events from
+    // constantly bouncing the scheme back to keyboard.
+    if !any_gamepad_activity {
+        if input.get_just_pressed().next().is_some() || mouse_input.get_just_pressed().next().is_some() {
+            if ui_state.input_scheme != InputScheme::KeyboardMouse {
+                ui_state.input_scheme = InputScheme::KeyboardMouse;
+                info!("Keyboard/Mouse input detected. Control scheme switched to Keyboard & Mouse.");
             }
         }
     }
