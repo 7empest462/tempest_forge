@@ -2,6 +2,10 @@ use bevy::prelude::*;
 use bevy_hanabi::prelude::*;
 use crate::player::combat::LaserHitEvent;
 
+// bevy 0.18 exports its own `Gradient` enum (CSS UI gradients) via bevy::prelude::*,
+// which collides with bevy_hanabi::Gradient<T>. Alias the hanabi one explicitly.
+type HanabiGradient<T> = bevy_hanabi::Gradient<T>;
+
 /// Particle effects plugin - manages particle emitters and effects
 pub struct ParticleEffectsPlugin;
 
@@ -33,12 +37,12 @@ fn setup_laser_effect(
     mut commands: Commands,
     mut effects: ResMut<Assets<EffectAsset>>,
 ) {
-    let mut color_gradient = bevy_hanabi::Gradient::new();
+    let mut color_gradient = HanabiGradient::new();
     color_gradient.add_key(0.0, Vec4::new(1.0, 1.0, 1.0, 1.0)); // White hot
     color_gradient.add_key(0.2, Vec4::new(0.0, 1.0, 1.0, 1.0)); // Cyan glow
     color_gradient.add_key(1.0, Vec4::new(0.0, 0.5, 0.8, 0.0)); // Fade out
 
-    let mut size_gradient = bevy_hanabi::Gradient::new();
+    let mut size_gradient = HanabiGradient::new();
     size_gradient.add_key(0.0, Vec3::splat(0.1));
     size_gradient.add_key(1.0, Vec3::splat(0.0));
 
@@ -92,14 +96,14 @@ fn setup_thruster_effect(
     mut commands: Commands,
     mut effects: ResMut<Assets<EffectAsset>>,
 ) {
-    let mut color_gradient = bevy_hanabi::Gradient::new();
+    let mut color_gradient = HanabiGradient::new();
     // Intense HDR Glowing cyan/blue plasma jet (super high-tech, matches the mech laser!)
     color_gradient.add_key(0.0, Vec4::new(3.0, 3.0, 3.0, 1.0)); // Intense HDR white core
     color_gradient.add_key(0.12, Vec4::new(0.0, 2.5, 3.0, 1.0)); // Glowing HDR vibrant cyan
     color_gradient.add_key(0.5, Vec4::new(0.0, 0.8, 3.0, 0.8)); // Glowing HDR electric blue
     color_gradient.add_key(1.0, Vec4::new(0.0, 0.0, 1.0, 0.0)); // Deep blue fade-out
 
-    let mut size_gradient = bevy_hanabi::Gradient::new();
+    let mut size_gradient = HanabiGradient::new();
     size_gradient.add_key(0.0, Vec3::splat(0.35)); // Thick, intense jet nozzle flare
     size_gradient.add_key(0.4, Vec3::splat(0.18)); // Sizzling stream
     size_gradient.add_key(1.0, Vec3::splat(0.0));
@@ -137,12 +141,12 @@ fn setup_chimney_smoke_effect(
     mut commands: Commands,
     mut effects: ResMut<Assets<EffectAsset>>,
 ) {
-    let mut color_gradient = bevy_hanabi::Gradient::new();
+    let mut color_gradient = HanabiGradient::new();
     color_gradient.add_key(0.0, Vec4::new(0.45, 0.45, 0.47, 0.45)); // Warm chimney grey smoke
     color_gradient.add_key(0.5, Vec4::new(0.55, 0.55, 0.55, 0.22)); // Fades out
     color_gradient.add_key(1.0, Vec4::new(0.65, 0.65, 0.65, 0.0)); // Disappears
 
-    let mut size_gradient = bevy_hanabi::Gradient::new();
+    let mut size_gradient = HanabiGradient::new();
     size_gradient.add_key(0.0, Vec3::splat(0.18)); // Base chimney opening size
     size_gradient.add_key(0.5, Vec3::splat(0.42)); // Spreads out
     size_gradient.add_key(1.0, Vec3::splat(0.72));
@@ -180,12 +184,12 @@ fn setup_blacksmith_spark_effect(
     mut commands: Commands,
     mut effects: ResMut<Assets<EffectAsset>>,
 ) {
-    let mut color_gradient = bevy_hanabi::Gradient::new();
+    let mut color_gradient = HanabiGradient::new();
     color_gradient.add_key(0.0, Vec4::new(4.5, 2.5, 0.5, 1.0)); // Ultra bright HDR golden-white core
     color_gradient.add_key(0.4, Vec4::new(3.0, 1.0, 0.0, 0.85)); // Deep warm orange glowing sparks
     color_gradient.add_key(1.0, Vec4::new(1.2, 0.0, 0.0, 0.0)); // Fade out red hot embers
 
-    let mut size_gradient = bevy_hanabi::Gradient::new();
+    let mut size_gradient = HanabiGradient::new();
     size_gradient.add_key(0.0, Vec3::splat(0.09));
     size_gradient.add_key(1.0, Vec3::splat(0.015));
 
