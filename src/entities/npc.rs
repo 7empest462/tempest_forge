@@ -92,6 +92,10 @@ pub fn spawn_npc(
             attacker: None,
             attack_cooldown: 0.0,
         },
+        crate::world::water::WaterInteractor {
+            mass: 3.375, // NPCs scale is 1.5 (1.5^3)
+            ..default()
+        },
         Health::new(25.0), // A bit tougher!
         Hittable,
         Transform::from_translation(pos).with_scale(Vec3::splat(1.5)),

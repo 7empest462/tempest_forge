@@ -80,6 +80,10 @@ fn spawn_animals(
 
         commands.spawn((
             Animal,
+            crate::world::water::WaterInteractor {
+                mass: size * size * size,
+                ..default()
+            },
             Creature { species, state: AIState::Wandering, last_attack_time: 0.0 },
             CreatureData { speed, size, detection_radius: detection },
             Health::new(hp),

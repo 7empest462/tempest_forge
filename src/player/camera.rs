@@ -210,6 +210,7 @@ fn setup_player(
 
     commands.spawn((
         Player,
+        crate::world::water::WaterInteractor { is_player: true, ..default() },
         PhysicsState {
             flying: true,
             spawn_timer: 8.0, // Increased to allow high-priority spawn-wave to mesh

@@ -106,32 +106,53 @@ pub enum ArmorTier {
     Gold,
 }
 
-#[derive(Resource, Default, Serialize, Deserialize, Clone)]
+#[derive(Resource, Serialize, Deserialize, Clone)]
 pub struct Inventory {
     #[serde(with = "resources_serde")]
     pub resources: std::collections::HashMap<BlockType, u32>,
-    #[serde(default)]
+    #[serde(default = "default_true")]
     pub has_bow: bool,
-    #[serde(default)]
+    #[serde(default = "default_true")]
     pub has_axe: bool,
-    #[serde(default)]
+    #[serde(default = "default_true")]
     pub has_pickaxe: bool,
     #[serde(default)]
     pub armor_tier: ArmorTier,
-    #[serde(default)]
+    #[serde(default = "default_true")]
     pub has_sword: bool,
-    #[serde(default)]
+    #[serde(default = "default_true")]
     pub has_iron_pickaxe: bool,
     #[serde(default)]
     pub has_gold_pickaxe: bool,
-    #[serde(default)]
+    #[serde(default = "default_true")]
     pub has_iron_axe: bool,
     #[serde(default)]
     pub has_gold_axe: bool,
-    #[serde(default)]
+    #[serde(default = "default_true")]
     pub has_iron_sword: bool,
     #[serde(default)]
     pub has_gold_sword: bool,
+}
+
+fn default_true() -> bool { true }
+
+impl Default for Inventory {
+    fn default() -> Self {
+        Self {
+            resources: std::collections::HashMap::new(),
+            has_bow: true,
+            has_axe: true,
+            has_pickaxe: true,
+            armor_tier: ArmorTier::None,
+            has_sword: true,
+            has_iron_pickaxe: true,
+            has_gold_pickaxe: false,
+            has_iron_axe: true,
+            has_gold_axe: false,
+            has_iron_sword: true,
+            has_gold_sword: false,
+        }
+    }
 }
 
 #[derive(Resource, Default, Serialize, Deserialize, Clone)]
@@ -240,6 +261,7 @@ pub struct InteractionParams<'w, 's> {
     pub weapon: Res<'w, WeaponState>,
     pub health_query: Query<'w, 's, (Entity, &'static Transform, &'static mut crate::player::combat::Health), (With<crate::player::combat::Hittable>, Without<crate::player::combat::DamageEvent>)>,
     pub gamepads: Query<'w, 's, &'static Gamepad>,
+    pub water_impulses: MessageWriter<'w, crate::world::water::WaterImpulseEvent>,
 }
 
 fn update_interaction(
@@ -426,7 +448,7 @@ fn update_interaction(
                     }
 
                     if params.mining_progress.progress >= 1.0 {
-                        modify_block(&mut voxel_world, &mut params.machinery_registry, &mut params.inventory, &mut params.world_persistence, pos, BlockType::Air, &mut params.commands, &mut params.meshes, &mut params.materials, Vec3::ZERO, &params.asset_server);
+                        modify_block(&mut voxel_world, &mut params.machinery_registry, &mut params.inventory, &mut params.world_persistence, pos, BlockType::Air, &mut params.commands, &mut params.meshes, &mut params.materials, Vec3::ZERO, &params.asset_server, &mut params.water_impulses);
                         params.mining_progress.progress = 0.0;
                     }
                 }
@@ -453,7 +475,7 @@ fn update_interaction(
                 if can_build {
                     let (t, _) = params.player_query.single().expect("Player must exist");
                     let player_pos = t.translation;
-                    modify_block(&mut voxel_world, &mut params.machinery_registry, &mut params.inventory, &mut params.world_persistence, pos + normal, params.placement.current_block, &mut params.commands, &mut params.meshes, &mut params.materials, player_pos, &params.asset_server);
+                    modify_block(&mut voxel_world, &mut params.machinery_registry, &mut params.inventory, &mut params.world_persistence, pos + normal, params.placement.current_block, &mut params.commands, &mut params.meshes, &mut params.materials, player_pos, &params.asset_server, &mut params.water_impulses);
                 }
             }
         }
@@ -474,6 +496,7 @@ fn modify_block(
     materials: &mut Assets<StandardMaterial>,
     player_pos: Vec3,
     asset_server: &AssetServer,
+    water_impulses: &mut MessageWriter<crate::world::water::WaterImpulseEvent>,
 ) {
     let old_block = if let WorldVoxel::Solid(mat) = voxel_world.get_voxel(pos) {
         material_to_block(mat)
@@ -764,6 +787,17 @@ fn modify_block(
                 },
             ));
         }
+    }
+
+    // Fire water impulse event for splashing when blocks are modified (placed or broken)
+    // especially for blocks near the water surface level (Y around 30.0)
+    if (pos.y as f32) < 35.0 && (pos.y as f32) > 20.0 {
+        let force = if block_type == BlockType::Air { -15.0 } else { 15.0 };
+        water_impulses.write(crate::world::water::WaterImpulseEvent {
+            position: pos.as_vec3() + 0.5,
+            force,
+            radius: 1.5,
+        });
     }
 }
 

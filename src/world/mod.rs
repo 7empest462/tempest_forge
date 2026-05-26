@@ -6,6 +6,7 @@ pub mod noise_generator;
 pub mod manager;
 pub mod settlement;
 pub mod water;
+pub mod water_gpu;
 pub mod tree_generator;
 
 pub struct WorldPlugin;

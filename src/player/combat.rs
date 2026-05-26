@@ -438,6 +438,7 @@ pub fn fire_laser(
     mut laser_audio: ResMut<LaserAudio>,
     laser_heat: Res<LaserHeat>,
     gamepads: Query<&Gamepad>,
+    mut water_impulses: MessageWriter<crate::world::water::WaterImpulseEvent>,
 ) {
     let mut is_firing = mouse_input.pressed(MouseButton::Left);
     for gamepad in gamepads.iter() {
@@ -505,6 +506,14 @@ pub fn fire_laser(
             hit_pos = hit.position;
             hit_events.write(LaserHitEvent { position: hit_pos, _normal: hit.normal.unwrap_or(Vec3::Y) });
             voxel_world.set_voxel(hit.voxel_pos(), WorldVoxel::Air);
+            
+            if (hit_pos.y as f32) < 35.0 && (hit_pos.y as f32) > 20.0 {
+                water_impulses.write(crate::world::water::WaterImpulseEvent {
+                    position: hit_pos,
+                    force: -15.0,
+                    radius: 1.5,
+                });
+            }
         }
 
         let beam_len = beam_start.distance(hit_pos);

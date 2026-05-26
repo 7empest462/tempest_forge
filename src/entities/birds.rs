@@ -59,6 +59,10 @@ fn spawn_birds(
 
         commands.spawn((
             Bird,
+            crate::world::water::WaterInteractor {
+                mass: size * size * size,
+                ..default()
+            },
             Creature { species, state: AIState::Flocking, last_attack_time: 0.0 },
             CreatureData { speed, size, detection_radius: 10.0 },
             Transform::from_translation(spawn_pos),
