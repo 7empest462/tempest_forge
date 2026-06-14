@@ -6,9 +6,9 @@ pub struct EnvironmentPlugin;
 impl Plugin for EnvironmentPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(TimeOfDay::default())
-           .add_systems(Update, update_time)
-           .add_systems(Update, update_sun)
-           .add_systems(Update, update_sky);
+            .add_systems(Update, update_time)
+            .add_systems(Update, update_sun)
+            .add_systems(Update, update_sky);
     }
 }
 
@@ -20,7 +20,10 @@ pub struct TimeOfDay {
 
 impl Default for TimeOfDay {
     fn default() -> Self {
-        Self { hour: 10.0, speed: 0.01 } // Reduced speed for much longer days
+        Self {
+            hour: 10.0,
+            speed: 0.01,
+        } // Reduced speed for much longer days
     }
 }
 
@@ -44,7 +47,7 @@ fn update_sun(
     mut light_query: Query<(&mut DirectionalLight, Option<&Sun>, Option<&Moon>)>,
 ) {
     let angle = (time_of_day.hour / 24.0) * 2.0 * PI - PI / 2.0;
-    
+
     // Sun position
     if let Ok(mut transform) = sun_query.single_mut() {
         transform.rotation = Quat::from_rotation_x(angle);
@@ -60,7 +63,7 @@ fn update_sun(
         if sun.is_some() {
             let sun_height = angle.sin();
             light.illuminance = (sun_height.max(-0.1) * 80000.0).clamp(0.0, 80000.0);
-            
+
             // Dawn/Dusk tint
             if sun_height > -0.1 && sun_height < 0.2 {
                 let t = (sun_height + 0.1) / 0.3;
@@ -76,14 +79,11 @@ fn update_sun(
     }
 }
 
-fn update_sky(
-    time_of_day: Res<TimeOfDay>,
-    mut clear_color: ResMut<ClearColor>,
-) {
+fn update_sky(time_of_day: Res<TimeOfDay>, mut clear_color: ResMut<ClearColor>) {
     let hour = time_of_day.hour;
-    
+
     // Simple linear interpolation between key times
-    let sky_color = if hour < 5.0 || hour > 20.0 {
+    let sky_color = if !(5.0..=20.0).contains(&hour) {
         // Night
         Color::srgb(0.02, 0.02, 0.05)
     } else if hour < 7.0 {
@@ -96,7 +96,11 @@ fn update_sky(
     } else {
         // Dusk
         let t = (hour - 18.0) / 2.0;
-        Color::srgb(0.4 * (1.0 - t) + 0.02, 0.3 * (1.0 - t) + 0.02, 0.1 * (1.0 - t) + 0.05)
+        Color::srgb(
+            0.4 * (1.0 - t) + 0.02,
+            0.3 * (1.0 - t) + 0.02,
+            0.1 * (1.0 - t) + 0.05,
+        )
     };
 
     clear_color.0 = sky_color;

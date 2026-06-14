@@ -21,9 +21,9 @@
 //! `rise = span / 2` (true semicircle).  Voussoirs are evenly spaced by arc
 //! angle, each rotated so its local Y axis points radially outward.
 
-use std::f32::consts::PI;
-use bevy::prelude::{Transform, Vec2, Vec3};
 use bevy::math::{Mat3, Quat};
+use bevy::prelude::{Transform, Vec2, Vec3};
+use std::f32::consts::PI;
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -87,14 +87,14 @@ pub struct ArchOpening {
 /// Returns an empty `Vec` if the span is outside [`MIN_ARCH_SPAN`] …
 /// [`MAX_ARCH_SPAN`].
 pub fn generate_arch(opening: &ArchOpening) -> Vec<ArchBrick> {
-    let left  = opening.left_foot;
+    let left = opening.left_foot;
     let right = opening.right_foot;
 
     // Horizontal span vector (ignore Y for span calculation)
     let span_vec_xz = Vec3::new(right.x - left.x, 0.0, right.z - left.z);
     let span = span_vec_xz.length();
 
-    if span < MIN_ARCH_SPAN || span > MAX_ARCH_SPAN {
+    if !(MIN_ARCH_SPAN..=MAX_ARCH_SPAN).contains(&span) {
         return Vec::new();
     }
 
@@ -102,8 +102,8 @@ pub fn generate_arch(opening: &ArchOpening) -> Vec<ArchBrick> {
 
     // Arch centre sits at the midpoint horizontally, resting flush on the imposts.
     let mid_foot = (left + right) * 0.5;
-    let foot_y   = left.y.max(right.y); // use the higher of the two impost heights
-    let center   = Vec3::new(mid_foot.x, foot_y, mid_foot.z);
+    let foot_y = left.y.max(right.y); // use the higher of the two impost heights
+    let center = Vec3::new(mid_foot.x, foot_y, mid_foot.z);
 
     // Normalised horizontal direction from left to right impost.
     let span_dir = span_vec_xz.normalize();
@@ -111,7 +111,7 @@ pub fn generate_arch(opening: &ArchOpening) -> Vec<ArchBrick> {
     let wall_normal = Vec3::new(-span_dir.z, 0.0, span_dir.x);
 
     // How many voussoirs fit on the semicircle?
-    let arc_length    = PI * radius; // half circumference
+    let arc_length = PI * radius; // half circumference
     let num_voussoirs = ((arc_length / VOUSSOIR_ARC_WIDTH).round() as usize).max(3);
 
     let mut bricks = Vec::with_capacity(num_voussoirs);
@@ -123,19 +123,17 @@ pub fn generate_arch(opening: &ArchOpening) -> Vec<ArchBrick> {
         let angle_mid = PI * (1.0 - arc_t_mid);
 
         // arc_t for the two edges (used for scale calculation)
-        let arc_t_lo  = i as f32 / num_voussoirs as f32;
-        let arc_t_hi  = (i as f32 + 1.0) / num_voussoirs as f32;
-        let angle_lo  = PI * (1.0 - arc_t_lo);
-        let angle_hi  = PI * (1.0 - arc_t_hi);
+        let arc_t_lo = i as f32 / num_voussoirs as f32;
+        let arc_t_hi = (i as f32 + 1.0) / num_voussoirs as f32;
+        let angle_lo = PI * (1.0 - arc_t_lo);
+        let angle_hi = PI * (1.0 - arc_t_hi);
 
         // Centroid position on the arch centreline.
         // In the arch's local 2-D frame: X along span, Y vertical.
         let pos_local_mid = Vec2::new(angle_mid.cos() * radius, angle_mid.sin() * radius);
 
         // Centroid in world space.
-        let centroid = center
-            + span_dir   * pos_local_mid.x
-            + Vec3::Y    * pos_local_mid.y;
+        let centroid = center + span_dir * pos_local_mid.x + Vec3::Y * pos_local_mid.y;
 
         // Radial outward direction — computed for reference, used to derive local_y
         let _radial_out = (centroid - center).normalize();
@@ -144,13 +142,15 @@ pub fn generate_arch(opening: &ArchOpening) -> Vec<ArchBrick> {
         // Points from left-impost side toward right-impost side.
         let tangent_local_lo = Vec2::new(angle_lo.cos(), angle_lo.sin());
         let tangent_local_hi = Vec2::new(angle_hi.cos(), angle_hi.sin());
-        let tang_mid_local   = (tangent_local_hi - tangent_local_lo).normalize();
+        let tang_mid_local = (tangent_local_hi - tangent_local_lo).normalize();
         // The tangent in world space (rotated into span_dir / Y plane):
         let arc_tangent = span_dir * tang_mid_local.x + Vec3::Y * tang_mid_local.y;
 
         // Approximate arc-width at this voussoir (chord between its two edge positions).
-        let pos_lo = center + span_dir * (angle_lo.cos() * radius) + Vec3::Y * (angle_lo.sin() * radius);
-        let pos_hi = center + span_dir * (angle_hi.cos() * radius) + Vec3::Y * (angle_hi.sin() * radius);
+        let pos_lo =
+            center + span_dir * (angle_lo.cos() * radius) + Vec3::Y * (angle_lo.sin() * radius);
+        let pos_hi =
+            center + span_dir * (angle_hi.cos() * radius) + Vec3::Y * (angle_hi.sin() * radius);
         let actual_arc_width = pos_lo.distance(pos_hi).max(0.05);
 
         // Build rotation: local X = along arc tangent, local Y = radially outward,
@@ -222,10 +222,10 @@ pub fn find_arch_openings(endpoints: &[WallEndpoint]) -> Vec<ArchOpening> {
         for b in endpoints.iter().skip(i + 1) {
             let a_xz = Vec2::new(a.top_center.x, a.top_center.z);
             let b_xz = Vec2::new(b.top_center.x, b.top_center.z);
-            let dist = a_xz.distance(b_xz);
+            let dist_sq = a_xz.distance_squared(b_xz);
 
-            // Must be within bridging range
-            if dist < MIN_ARCH_SPAN || dist > AUTO_ARCH_ENDPOINT_DIST {
+            // Must be within bridging range (MIN_ARCH_SPAN = 0.6, sq = 0.36; AUTO_ARCH_ENDPOINT_DIST = 3.5, sq = 12.25)
+            if !(0.36..=12.25).contains(&dist_sq) {
                 continue;
             }
 
@@ -236,16 +236,14 @@ pub fn find_arch_openings(endpoints: &[WallEndpoint]) -> Vec<ArchOpening> {
             }
 
             // Order left-to-right by X primarily, then Z
-            let (left_ep, right_ep) = if a_xz.x < b_xz.x
-                || (a_xz.x == b_xz.x && a_xz.y < b_xz.y)
-            {
+            let (left_ep, right_ep) = if a_xz.x < b_xz.x || (a_xz.x == b_xz.x && a_xz.y < b_xz.y) {
                 (a, b)
             } else {
                 (b, a)
             };
 
             openings.push(ArchOpening {
-                left_foot:  left_ep.top_center,
+                left_foot: left_ep.top_center,
                 right_foot: right_ep.top_center,
             });
         }

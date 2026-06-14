@@ -20,6 +20,16 @@ Pilot a powerful **flying mech suit** and reshape entire worlds. Build intricate
 - **Ion Laser Cannon** — A high-powered terraforming and mining beam that clears land rapidly. Equipped with active overheating thermal management (up to 6.7 seconds of continuous firing with a 4.0-second cooling phase).
 - **Viscous Water Physics** — Fully integrated fluid simulation. Carve terrain to watch water naturally pool, stream, and flow. Swim, dive, tread water, or pilot a wooden boat with custom buoyancy and treading physics.
 
+### Ranged Combat & Firearms
+- **Four Distinct Firearms** — Equip and fire the **Pistol**, **Revolver**, **Rifle**, and **Sniper Rifle**, each with custom damage, rate of fire, ammo capacity, and reload durations.
+- **Direct Raycast Aiming** — Crosshairs dynamically map via a camera-forward raycast to their 3D voxel intersection point in both first-person and third-person perspectives, ensuring pixel-perfect accuracy.
+- **Tactile Weapon & Camera Recoil** — Screen-shake recoil triggers on shots and decays exponentially over time, paired with physically animated weapon model translation offsets (slide kick-back, lift, and barrel tilt-up rotation).
+- **High-Fidelity Audio Synthesis** — Custom, realistic mechanical reloading slides, hammer clicks, and metallic chamber ringing synced with AI-synthesized gunshot audio.
+
+### AI Monsters & Settlements
+- **Night Surface Spawning** — Monsters including the elephant-sized quadrupedal **Cyclops** and the bipedal hopping **Triangaroo** emerge underground and during night cycles, automatically despawning in daylight surface zones.
+- **Guard Patrols & Settlement Defense** — City Guards actively patrol and engage nearby monsters within 16.0 meters to protect the town, while townspeople flee or retaliate against attackers.
+
 ### Procedural Architecture & Physics
 - **Procedural Wall Generation** — Lay down anchor points to sketch walls. Once built, individual stone bricks physically drop, bounce, and settle into place via **Rapier3D** physics.
 - **Dynamic Voussoir Arches** — Build structures near one another, and watch organic, structurally sound voussoir arches procedurally spawn between nearby wall sections.
@@ -27,6 +37,7 @@ Pilot a powerful **flying mech suit** and reshape entire worlds. Build intricate
 
 ### Engine & Survival Systems
 - **Tiered Tools & Combat** — Craft and upgrade tools (Pickaxes, Axes, Swords, Bows) across Wood, Iron, and Gold tiers. Upgrade your mech suit plating to boost protection.
+- **Structured Error Handling** — Built on the `thiserror` crate to gracefully intercept and log I/O, JSON, and entity query errors rather than crashing the game client.
 - **Hanabi GPU Particles** — Visually stunning thruster exhausts, laser impact embers, and mining debris.
 - **World Persistence** — Full quick-save and quick-load serialization to persist your voxels, structures, inventory, and player state.
 - **WASM + WebGPU Support** — Built to run directly in modern browsers with WebGPU hardware acceleration, as well as native desktop builds.
@@ -48,9 +59,10 @@ Pilot a powerful **flying mech suit** and reshape entire worlds. Build intricate
 | **F** | Toggle Thrusters / Jetpack Flight |
 | **M** | Toggle Mech Suit (Active / Standby) |
 | **V** | Cycle Camera View (First Person / Third Person / Front View) |
-| **1 - 5** | Equip Tools/Weapons (*Pickaxe, Axe, Sword, Laser, Bow*) |
-| **Left Click** | Use Tool / Attack / Fire Bow & Laser |
+| **1 - 9** | Equip Tools/Weapons (*Pickaxe, Axe, Sword, Laser, Bow, Pistol, Revolver, Rifle, Sniper*) |
+| **Left Click** | Use Tool / Attack / Fire Weapon / Mine |
 | **Right Click** | Place Standard Voxel |
+| **R** | Manual Reload (when carrying a gun) |
 | **I / E** | Toggle Forge & Inventory Menu |
 | **Escape** | Toggle Pause Menu / Release Cursor |
 | **F5** | Quick Save |
@@ -76,11 +88,11 @@ Pilot a powerful **flying mech suit** and reshape entire worlds. Build intricate
 | **L3 (Left Stick Click)** | Sprint |
 | **A (South Button)** | Jump / Swim Up / Fly Up |
 | **B (East Button)** | Dive / Descend / Fly Down |
-| **X (West Button)** | Toggle Thrusters / Jetpack Flight |
+| **X (West Button)** | Toggle Thrusters / Jetpack Flight / Manual Reload (when carrying a gun) |
 | **Y (North Button)** | Toggle Mech Suit (Active / Standby) |
 | **R1 (Right Bumper)** | Cycle Equip Tools/Weapons Forward |
 | **L1 (Left Bumper)** | Cycle Equip Tools/Weapons Backward |
-| **R2 (Right Trigger)** | Use Tool / Attack / Fire Bow & Laser |
+| **R2 (Right Trigger)** | Use Tool / Attack / Fire Weapon / Mine |
 | **L2 (Left Trigger)** | Place Standard Voxel |
 | **D-Pad Left / Up / Right**| Quick Equip Tools (*Drill, Axe, Laser*) |
 | **D-Pad Down** | Toggle Forge & Inventory Menu |

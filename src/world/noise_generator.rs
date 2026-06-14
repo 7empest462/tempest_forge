@@ -1,11 +1,11 @@
-/// Enhanced noise generation using bracket-noise
-/// Provides multiple noise types for varied terrain generation
+//! Enhanced noise generation using bracket-noise
+//! Provides multiple noise types for varied terrain generation
 
+use crate::voxel::chunk::BlockType;
 use bevy::prelude::*;
+use bevy_voxel_world::prelude::*;
 use bracket_noise::prelude::*;
 use std::sync::Arc;
-use bevy_voxel_world::prelude::*;
-use crate::voxel::chunk::BlockType;
 
 pub struct TerrainData {
     pub height: f32,
@@ -119,7 +119,7 @@ impl NoiseGenerator {
         // River Carving (Ridged noise)
         let river_val = self.inner.temp_noise.get_noise(x, z).abs();
         let is_river = river_val < 0.05;
-        
+
         let river_depth = if is_river {
             let target_river_height = 15.0 + (base + 0.3).max(0.0) * 15.0;
             let max_depth = (terrain.height - target_river_height).max(0.0);
@@ -152,7 +152,6 @@ impl Default for NoiseGenerator {
     }
 }
 
-
 impl VoxelWorldConfig for NoiseGenerator {
     type MaterialIndex = u8;
     type ChunkUserBundle = ();
@@ -169,7 +168,7 @@ impl VoxelWorldConfig for NoiseGenerator {
             (chunk_pos.z * 32 + 16) as f32,
         );
         let distance = player_pos.distance(chunk_world_pos);
-        
+
         // LOD 0: within 6 chunks (192m) — maximum detail for gameplay and collision region
         // LOD 1: between 6–10 chunks (192–320m) — moderate detail, halved mesh resolution
         // LOD 2: beyond 10 chunks (320m+) — coarse backdrop, quarter mesh resolution
@@ -223,10 +222,10 @@ impl VoxelWorldConfig for NoiseGenerator {
                 BlockType::Flower | BlockType::Fern | BlockType::Moss => [10, 10, 10],
                 BlockType::IronOre | BlockType::IronBlock => [11, 11, 11],
                 BlockType::GoldOre | BlockType::GoldBlock => [12, 12, 12],
-                BlockType::Brick => [3, 3, 3], // Brown/Clay
-                BlockType::Concrete => [6, 6, 6], // Dark Gray
+                BlockType::Brick => [3, 3, 3],      // Brown/Clay
+                BlockType::Concrete => [6, 6, 6],   // Dark Gray
                 BlockType::WoodPlanks => [8, 8, 8], // Wood
-                BlockType::Glass => [4, 4, 4], // Stone-like frame for now
+                BlockType::Glass => [4, 4, 4],      // Stone-like frame for now
                 _ => [4, 4, 4],
             }
         })
@@ -271,7 +270,7 @@ impl VoxelWorldConfig for NoiseGenerator {
 
                 // 2. Geological Layers (Depth based)
                 let depth = adjusted_surface - y;
-                
+
                 // Cave System (Deeper and more structured)
                 let cave_val = gen_ref.get_cave(x * 0.04, y * 0.08, z * 0.04).abs();
                 if cave_val < 0.06 && depth > 25.0 {
@@ -300,5 +299,4 @@ impl VoxelWorldConfig for NoiseGenerator {
             })
         })
     }
-
 }

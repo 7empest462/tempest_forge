@@ -1,6 +1,6 @@
-use bevy::{prelude::*, window::CursorOptions};
-use bevy::window::{PrimaryWindow, CursorGrabMode};
 use crate::GameState;
+use bevy::window::{CursorGrabMode, PrimaryWindow};
+use bevy::{prelude::*, window::CursorOptions};
 use bevy_voxel_world::prelude::*;
 
 pub mod hud;
@@ -8,23 +8,11 @@ pub mod inventory;
 pub mod pause_menu;
 
 /// Control scheme modes
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum InputScheme {
+    #[default]
     KeyboardMouse,
     SteamDeck,
-}
-
-impl Default for InputScheme {
-    fn default() -> Self {
-        #[cfg(target_os = "linux")]
-        {
-            InputScheme::SteamDeck
-        }
-        #[cfg(not(target_os = "linux"))]
-        {
-            InputScheme::KeyboardMouse
-        }
-    }
 }
 
 /// UI state tracking which panels are open
@@ -49,17 +37,24 @@ impl Plugin for UiPlugin {
             .init_resource::<pause_menu::PauseMenuState>()
             .add_systems(Update, egui_warmup)
             // Loading Screen Systems
-            .add_systems(Update, draw_loading_screen
-                .run_if(in_state(GameState::Loading))
-                .run_if(resource_equals(EguiReady(true))))
+            .add_systems(
+                Update,
+                draw_loading_screen
+                    .run_if(in_state(GameState::Loading))
+                    .run_if(resource_equals(EguiReady(true))),
+            )
             // In-Game Systems
-            .add_systems(Update, (
-                ui_input_handler,
-                hud::draw_hud.after(egui_warmup),
-                inventory::draw_inventory_panel.after(hud::draw_hud),
-                pause_menu::draw_pause_menu.after(inventory::draw_inventory_panel),
-                grab_mouse.after(pause_menu::draw_pause_menu),
-            ).run_if(in_state(GameState::InGame)));
+            .add_systems(
+                Update,
+                (
+                    ui_input_handler,
+                    hud::draw_hud.after(egui_warmup),
+                    inventory::draw_inventory_panel.after(hud::draw_hud),
+                    pause_menu::draw_pause_menu.after(inventory::draw_inventory_panel),
+                    grab_mouse.after(pause_menu::draw_pause_menu),
+                )
+                    .run_if(in_state(GameState::InGame)),
+            );
     }
 }
 
@@ -76,21 +71,27 @@ fn draw_loading_screen(
     let target_chunks = 128; // Increased for visibility
     let progress = (chunk_count as f32 / target_chunks as f32).min(1.0);
 
-    let Ok(ctx) = contexts.ctx_mut() else { return; };
+    let Ok(ctx) = contexts.ctx_mut() else {
+        return;
+    };
     bevy_egui::egui::CentralPanel::default()
         .frame(bevy_egui::egui::Frame::NONE.fill(bevy_egui::egui::Color32::from_rgb(10, 10, 15)))
         .show(ctx, |ui| {
             ui.vertical_centered(|ui| {
                 ui.add_space(ui.available_height() * 0.3);
-                ui.heading(bevy_egui::egui::RichText::new("TEMPEST FORGE")
-                    .size(60.0)
-                    .color(bevy_egui::egui::Color32::from_rgb(0, 200, 255))
-                    .strong());
-                
+                ui.heading(
+                    bevy_egui::egui::RichText::new("TEMPEST FORGE")
+                        .size(60.0)
+                        .color(bevy_egui::egui::Color32::from_rgb(0, 200, 255))
+                        .strong(),
+                );
+
                 ui.add_space(40.0);
-                ui.label(bevy_egui::egui::RichText::new("Forging the world...")
-                    .size(24.0)
-                    .italics());
+                ui.label(
+                    bevy_egui::egui::RichText::new("Forging the world...")
+                        .size(24.0)
+                        .italics(),
+                );
 
                 ui.add_space(20.0);
                 let progress_bar = bevy_egui::egui::ProgressBar::new(progress)
@@ -99,12 +100,17 @@ fn draw_loading_screen(
                 ui.add(progress_bar);
 
                 ui.add_space(10.0);
-                ui.label(format!("Chunks Generated: {} / {}", chunk_count, target_chunks));
-                
+                ui.label(format!(
+                    "Chunks Generated: {} / {}",
+                    chunk_count, target_chunks
+                ));
+
                 if *timer < 2.0 {
                     ui.add_space(10.0);
-                    ui.label(bevy_egui::egui::RichText::new("Warming up engines...")
-                        .color(bevy_egui::egui::Color32::GRAY));
+                    ui.label(
+                        bevy_egui::egui::RichText::new("Warming up engines...")
+                            .color(bevy_egui::egui::Color32::GRAY),
+                    );
                 }
             });
         });
@@ -130,8 +136,12 @@ fn ui_input_handler(
     // events simultaneously, so we must detect gamepad before the keyboard fallback.
     let mut any_gamepad_activity = false;
     for gamepad in gamepads.iter() {
-        if gamepad.just_pressed(GamepadButton::Start) { toggle_pause = true; }
-        if gamepad.just_pressed(GamepadButton::DPadDown) { toggle_inv = true; }
+        if gamepad.just_pressed(GamepadButton::Start) {
+            toggle_pause = true;
+        }
+        if gamepad.just_pressed(GamepadButton::DPadDown) {
+            toggle_inv = true;
+        }
 
         // Check if ANY gamepad button was pressed this frame
         let gp_pressed = gamepad.just_pressed(GamepadButton::Start)
@@ -170,13 +180,13 @@ fn ui_input_handler(
     // Only switch to Keyboard & Mouse if there was NO gamepad activity this frame.
     // This prevents the Steam Deck's dual keyboard+gamepad HID events from
     // constantly bouncing the scheme back to keyboard.
-    if !any_gamepad_activity {
-        if input.get_just_pressed().next().is_some() || mouse_input.get_just_pressed().next().is_some() {
-            if ui_state.input_scheme != InputScheme::KeyboardMouse {
-                ui_state.input_scheme = InputScheme::KeyboardMouse;
-                info!("Keyboard/Mouse input detected. Control scheme switched to Keyboard & Mouse.");
-            }
-        }
+    if !any_gamepad_activity
+        && (input.get_just_pressed().next().is_some()
+            || mouse_input.get_just_pressed().next().is_some())
+        && ui_state.input_scheme != InputScheme::KeyboardMouse
+    {
+        ui_state.input_scheme = InputScheme::KeyboardMouse;
+        info!("Keyboard/Mouse input detected. Control scheme switched to Keyboard & Mouse.");
     }
 
     if toggle_inv {
@@ -199,10 +209,7 @@ fn ui_input_handler(
 }
 
 /// System to handle egui warm-up delay to prevent font panics
-pub fn egui_warmup(
-    mut ready: ResMut<EguiReady>,
-    mut frame_count: Local<u32>,
-) {
+pub fn egui_warmup(mut ready: ResMut<EguiReady>, mut frame_count: Local<u32>) {
     if !ready.0 {
         *frame_count += 1;
         if *frame_count > 10 {
@@ -217,7 +224,9 @@ fn grab_mouse(
     ui_state: Res<UiState>,
     mut contexts: bevy_egui::EguiContexts,
 ) {
-    let Ok((_, mut cursor_options)) = windows.single_mut() else { return; };
+    let Ok((_, mut cursor_options)) = windows.single_mut() else {
+        return;
+    };
 
     // ALWAYS release cursor when ANY menu is open
     if ui_state.show_pause_menu || ui_state.show_inventory {
@@ -229,8 +238,11 @@ fn grab_mouse(
     }
 
     // Check if egui wants input
-    let egui_wants_input = contexts.ctx_mut()
-        .map(|ctx: &mut bevy_egui::egui::Context| ctx.is_pointer_over_area() || ctx.wants_pointer_input() || ctx.wants_keyboard_input())
+    let egui_wants_input = contexts
+        .ctx_mut()
+        .map(|ctx: &mut bevy_egui::egui::Context| {
+            ctx.is_pointer_over_area() || ctx.wants_pointer_input() || ctx.wants_keyboard_input()
+        })
         .unwrap_or(false);
 
     if egui_wants_input {
@@ -246,4 +258,3 @@ fn grab_mouse(
         }
     }
 }
-

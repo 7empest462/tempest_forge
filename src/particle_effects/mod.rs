@@ -1,10 +1,7 @@
-use bevy::prelude::*;
-use bevy_hanabi::prelude::*;
 use crate::player::combat::LaserHitEvent;
-
-// bevy 0.18 exports its own `Gradient` enum (CSS UI gradients) via bevy::prelude::*,
-// which collides with bevy_hanabi::Gradient<T>. Alias the hanabi one explicitly.
-type HanabiGradient<T> = bevy_hanabi::Gradient<T>;
+use bevy::prelude::*;
+use bevy_hanabi::Gradient;
+use bevy_hanabi::prelude::*;
 
 /// Particle effects plugin - manages particle emitters and effects
 pub struct ParticleEffectsPlugin;
@@ -23,31 +20,31 @@ pub struct BlacksmithSparkEffect(pub Handle<EffectAsset>);
 
 impl Plugin for ParticleEffectsPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, (
-            setup_laser_effect,
-            setup_thruster_effect,
-            setup_chimney_smoke_effect,
-            setup_blacksmith_spark_effect,
-        ));
+        app.add_systems(
+            Startup,
+            (
+                setup_laser_effect,
+                setup_thruster_effect,
+                setup_chimney_smoke_effect,
+                setup_blacksmith_spark_effect,
+            ),
+        );
         app.add_systems(Update, spawn_laser_particles);
     }
 }
 
-fn setup_laser_effect(
-    mut commands: Commands,
-    mut effects: ResMut<Assets<EffectAsset>>,
-) {
-    let mut color_gradient = HanabiGradient::new();
+fn setup_laser_effect(mut commands: Commands, mut effects: ResMut<Assets<EffectAsset>>) {
+    let mut color_gradient = Gradient::new();
     color_gradient.add_key(0.0, Vec4::new(1.0, 1.0, 1.0, 1.0)); // White hot
     color_gradient.add_key(0.2, Vec4::new(0.0, 1.0, 1.0, 1.0)); // Cyan glow
     color_gradient.add_key(1.0, Vec4::new(0.0, 0.5, 0.8, 0.0)); // Fade out
 
-    let mut size_gradient = HanabiGradient::new();
+    let mut size_gradient = Gradient::new();
     size_gradient.add_key(0.0, Vec3::splat(0.1));
     size_gradient.add_key(1.0, Vec3::splat(0.0));
 
     let mut module = Module::default();
-    
+
     let init_pos = SetPositionSphereModifier {
         center: module.lit(Vec3::ZERO),
         radius: module.lit(0.05),
@@ -67,8 +64,14 @@ fn setup_laser_effect(
         .with_name("laser_impact")
         .init(init_pos)
         .init(init_vel)
-        .render(ColorOverLifetimeModifier { gradient: color_gradient, ..default() })
-        .render(SizeOverLifetimeModifier { gradient: size_gradient, screen_space_size: false });
+        .render(ColorOverLifetimeModifier {
+            gradient: color_gradient,
+            ..default()
+        })
+        .render(SizeOverLifetimeModifier {
+            gradient: size_gradient,
+            screen_space_size: false,
+        });
 
     let handle = effects.add(effect);
     commands.insert_resource(LaserImpactEffect(handle));
@@ -92,24 +95,21 @@ fn spawn_laser_particles(
     }
 }
 
-fn setup_thruster_effect(
-    mut commands: Commands,
-    mut effects: ResMut<Assets<EffectAsset>>,
-) {
-    let mut color_gradient = HanabiGradient::new();
+fn setup_thruster_effect(mut commands: Commands, mut effects: ResMut<Assets<EffectAsset>>) {
+    let mut color_gradient = Gradient::new();
     // Intense HDR Glowing cyan/blue plasma jet (super high-tech, matches the mech laser!)
     color_gradient.add_key(0.0, Vec4::new(3.0, 3.0, 3.0, 1.0)); // Intense HDR white core
     color_gradient.add_key(0.12, Vec4::new(0.0, 2.5, 3.0, 1.0)); // Glowing HDR vibrant cyan
     color_gradient.add_key(0.5, Vec4::new(0.0, 0.8, 3.0, 0.8)); // Glowing HDR electric blue
     color_gradient.add_key(1.0, Vec4::new(0.0, 0.0, 1.0, 0.0)); // Deep blue fade-out
 
-    let mut size_gradient = HanabiGradient::new();
+    let mut size_gradient = Gradient::new();
     size_gradient.add_key(0.0, Vec3::splat(0.35)); // Thick, intense jet nozzle flare
     size_gradient.add_key(0.4, Vec3::splat(0.18)); // Sizzling stream
     size_gradient.add_key(1.0, Vec3::splat(0.0));
 
     let mut module = Module::default();
-    
+
     let init_pos = SetPositionSphereModifier {
         center: module.lit(Vec3::ZERO),
         radius: module.lit(0.02),
@@ -117,7 +117,8 @@ fn setup_thruster_effect(
     };
 
     // Shoot downwards rapidly!
-    let init_vel = SetAttributeModifier::new(Attribute::VELOCITY, module.lit(Vec3::new(0.0, -15.0, 0.0)));
+    let init_vel =
+        SetAttributeModifier::new(Attribute::VELOCITY, module.lit(Vec3::new(0.0, -15.0, 0.0)));
 
     // Lifetime: slightly longer for a prominent plasma stream
     let init_lifetime = SetAttributeModifier::new(Attribute::LIFETIME, module.lit(0.22));
@@ -130,23 +131,26 @@ fn setup_thruster_effect(
         .init(init_pos)
         .init(init_vel)
         .init(init_lifetime)
-        .render(ColorOverLifetimeModifier { gradient: color_gradient, ..default() })
-        .render(SizeOverLifetimeModifier { gradient: size_gradient, screen_space_size: false });
+        .render(ColorOverLifetimeModifier {
+            gradient: color_gradient,
+            ..default()
+        })
+        .render(SizeOverLifetimeModifier {
+            gradient: size_gradient,
+            screen_space_size: false,
+        });
 
     let handle = effects.add(effect);
     commands.insert_resource(ThrusterEffect(handle));
 }
 
-fn setup_chimney_smoke_effect(
-    mut commands: Commands,
-    mut effects: ResMut<Assets<EffectAsset>>,
-) {
-    let mut color_gradient = HanabiGradient::new();
+fn setup_chimney_smoke_effect(mut commands: Commands, mut effects: ResMut<Assets<EffectAsset>>) {
+    let mut color_gradient = Gradient::new();
     color_gradient.add_key(0.0, Vec4::new(0.45, 0.45, 0.47, 0.45)); // Warm chimney grey smoke
     color_gradient.add_key(0.5, Vec4::new(0.55, 0.55, 0.55, 0.22)); // Fades out
     color_gradient.add_key(1.0, Vec4::new(0.65, 0.65, 0.65, 0.0)); // Disappears
 
-    let mut size_gradient = HanabiGradient::new();
+    let mut size_gradient = Gradient::new();
     size_gradient.add_key(0.0, Vec3::splat(0.18)); // Base chimney opening size
     size_gradient.add_key(0.5, Vec3::splat(0.42)); // Spreads out
     size_gradient.add_key(1.0, Vec3::splat(0.72));
@@ -157,7 +161,7 @@ fn setup_chimney_smoke_effect(
         radius: module.lit(0.06),
         dimension: ShapeDimension::Volume,
     };
-    
+
     // Slow drift upwards with slight random sway
     let init_vel = SetVelocitySphereModifier {
         center: module.lit(Vec3::new(0.0, 1.4, 0.0)),
@@ -173,28 +177,31 @@ fn setup_chimney_smoke_effect(
         .init(init_pos)
         .init(init_vel)
         .init(init_lifetime)
-        .render(ColorOverLifetimeModifier { gradient: color_gradient, ..default() })
-        .render(SizeOverLifetimeModifier { gradient: size_gradient, screen_space_size: false });
+        .render(ColorOverLifetimeModifier {
+            gradient: color_gradient,
+            ..default()
+        })
+        .render(SizeOverLifetimeModifier {
+            gradient: size_gradient,
+            screen_space_size: false,
+        });
 
     let handle = effects.add(effect);
     commands.insert_resource(ChimneySmokeEffect(handle));
 }
 
-fn setup_blacksmith_spark_effect(
-    mut commands: Commands,
-    mut effects: ResMut<Assets<EffectAsset>>,
-) {
-    let mut color_gradient = HanabiGradient::new();
+fn setup_blacksmith_spark_effect(mut commands: Commands, mut effects: ResMut<Assets<EffectAsset>>) {
+    let mut color_gradient = Gradient::new();
     color_gradient.add_key(0.0, Vec4::new(4.5, 2.5, 0.5, 1.0)); // Ultra bright HDR golden-white core
     color_gradient.add_key(0.4, Vec4::new(3.0, 1.0, 0.0, 0.85)); // Deep warm orange glowing sparks
     color_gradient.add_key(1.0, Vec4::new(1.2, 0.0, 0.0, 0.0)); // Fade out red hot embers
 
-    let mut size_gradient = HanabiGradient::new();
+    let mut size_gradient = Gradient::new();
     size_gradient.add_key(0.0, Vec3::splat(0.09));
     size_gradient.add_key(1.0, Vec3::splat(0.015));
 
     let mut module = Module::default();
-    
+
     let init_pos = SetPositionSphereModifier {
         center: module.lit(Vec3::ZERO),
         radius: module.lit(0.03),
@@ -216,8 +223,14 @@ fn setup_blacksmith_spark_effect(
         .init(init_pos)
         .init(init_vel)
         .init(init_lifetime)
-        .render(ColorOverLifetimeModifier { gradient: color_gradient, ..default() })
-        .render(SizeOverLifetimeModifier { gradient: size_gradient, screen_space_size: false });
+        .render(ColorOverLifetimeModifier {
+            gradient: color_gradient,
+            ..default()
+        })
+        .render(SizeOverLifetimeModifier {
+            gradient: size_gradient,
+            screen_space_size: false,
+        });
 
     let handle = effects.add(effect);
     commands.insert_resource(BlacksmithSparkEffect(handle));

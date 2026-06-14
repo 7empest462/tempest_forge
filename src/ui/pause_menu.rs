@@ -1,7 +1,7 @@
+use crate::persistence::{LoadEvent, SaveEvent};
+use crate::ui::{EguiReady, UiState};
 use bevy::prelude::*;
-use bevy_egui::{egui, EguiContexts};
-use crate::ui::{UiState, EguiReady};
-use crate::persistence::{SaveEvent, LoadEvent};
+use bevy_egui::{EguiContexts, egui};
 
 #[derive(Resource, Default)]
 pub struct PauseMenuState;
@@ -73,13 +73,17 @@ pub fn draw_pause_menu(
             ui.add_space(5.0);
             ui.horizontal(|ui| {
                 ui.label(egui::RichText::new("Control Scheme:").strong());
-                let scheme_btn = ui.button(format!("🔄 Switch to {}", match ui_state.input_scheme {
-                    crate::ui::InputScheme::KeyboardMouse => "Steam Deck / Gamepad",
-                    crate::ui::InputScheme::SteamDeck => "Keyboard & Mouse",
-                }));
+                let scheme_btn = ui.button(format!(
+                    "🔄 Switch to {}",
+                    match ui_state.input_scheme {
+                        crate::ui::InputScheme::KeyboardMouse => "Steam Deck / Gamepad",
+                        crate::ui::InputScheme::SteamDeck => "Keyboard & Mouse",
+                    }
+                ));
                 let scheme_rect = scheme_btn.rect;
                 let scheme_clicked = if let Some(pos) = mouse_pos {
-                    scheme_rect.contains(pos) && ctx.input(|i| i.pointer.button_released(egui::PointerButton::Primary))
+                    scheme_rect.contains(pos)
+                        && ctx.input(|i| i.pointer.button_released(egui::PointerButton::Primary))
                 } else {
                     false
                 };
@@ -102,7 +106,8 @@ pub fn draw_pause_menu(
                 let save_btn = ui.button("Save Game");
                 let save_rect = save_btn.rect;
                 let save_clicked = if let Some(pos) = mouse_pos {
-                    save_rect.contains(pos) && ctx.input(|i| i.pointer.button_released(egui::PointerButton::Primary))
+                    save_rect.contains(pos)
+                        && ctx.input(|i| i.pointer.button_released(egui::PointerButton::Primary))
                 } else {
                     false
                 };
@@ -114,7 +119,8 @@ pub fn draw_pause_menu(
                 let load_btn = ui.button("Load Game");
                 let load_rect = load_btn.rect;
                 let load_clicked = if let Some(pos) = mouse_pos {
-                    load_rect.contains(pos) && ctx.input(|i| i.pointer.button_released(egui::PointerButton::Primary))
+                    load_rect.contains(pos)
+                        && ctx.input(|i| i.pointer.button_released(egui::PointerButton::Primary))
                 } else {
                     false
                 };
@@ -135,7 +141,8 @@ pub fn draw_pause_menu(
                 let resume_btn = ui.button(resume_label);
                 let resume_rect = resume_btn.rect;
                 let resume_clicked = if let Some(pos) = mouse_pos {
-                    resume_rect.contains(pos) && ctx.input(|i| i.pointer.button_released(egui::PointerButton::Primary))
+                    resume_rect.contains(pos)
+                        && ctx.input(|i| i.pointer.button_released(egui::PointerButton::Primary))
                 } else {
                     false
                 };
@@ -147,7 +154,8 @@ pub fn draw_pause_menu(
                 let quit_btn = ui.button("Quit to Desktop");
                 let quit_rect = quit_btn.rect;
                 let quit_clicked = if let Some(pos) = mouse_pos {
-                    quit_rect.contains(pos) && ctx.input(|i| i.pointer.button_released(egui::PointerButton::Primary))
+                    quit_rect.contains(pos)
+                        && ctx.input(|i| i.pointer.button_released(egui::PointerButton::Primary))
                 } else {
                     false
                 };
@@ -161,4 +169,3 @@ pub fn draw_pause_menu(
             ui.label("Version: Tempest Forge 0.1.0");
         });
 }
-

@@ -14,6 +14,12 @@ pub struct Curve {
     pub length: f32,
 }
 
+impl Default for Curve {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Curve {
     pub fn new() -> Self {
         Self {
@@ -45,7 +51,8 @@ impl Curve {
         }
 
         self.points.push(pt);
-        self.points_u.push(if self.length > f32::EPSILON { 1.0 } else { 0.0 });
+        self.points_u
+            .push(if self.length > f32::EPSILON { 1.0 } else { 0.0 });
     }
 
     /// Incrementally prepend a point with a single rescale pass (no clone or distance recompute).

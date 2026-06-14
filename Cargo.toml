@@ -16,6 +16,8 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 futures-lite = "2.6"
 getrandom = { version = "0.4", features = ["wasm_js"] }
+thiserror = "2.0.18"
+
 
 # Physics Engine - Rapier3d (compatible with Bevy 0.18)
 bevy_rapier3d = "0.33"
@@ -23,6 +25,7 @@ rapier3d = "0.21"
 
 # UI Framework - egui (compatible with Bevy 0.18)
 bevy_egui = "0.39.1"
+bevy-inspector-egui = "0.36.0"
 
 # Particle Effects (Modern GPU system for Bevy 0.18)
 bevy_hanabi = "0.18"
@@ -44,10 +47,26 @@ glam = "0.33.0"
 
 [profile.release]
 opt-level = 3
-lto = "thin"
+lto = true
 codegen-units = 1
 panic = "abort"
+debug-assertions = false
+debug = false
+overflow-checks = false
+rpath = false
 
-[profile.dev.package."*"]
+[profile.dev]
+opt-level = 1                  # Light optimization (good balance)
+debug = true                   # Full debug info
+split-debuginfo = "unpacked"   # Better debugging on macOS
+overflow-checks = true         # Catch bugs during development
+incremental = true             # Faster incremental compiles
+
+[profile.dev.package.bevy]
 opt-level = 3
 
+[profile.dev.package.wgpu]
+opt-level = 3
+
+[profile.dev.package."wgpu-core"]
+opt-level = 3

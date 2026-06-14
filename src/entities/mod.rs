@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 
-pub mod birds;
 pub mod animals;
+pub mod birds;
 pub mod npc;
 
 pub struct WildlifePlugin;
@@ -38,6 +38,8 @@ pub enum Species {
     Chicken,
     Spider,
     Skeleton,
+    Triangaroo,
+    Cyclops,
 }
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug)]

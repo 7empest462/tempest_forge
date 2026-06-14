@@ -2,7 +2,7 @@
 // Simulates shallow water equations on GPU for real-time wave propagation
 
 // Grid dimensions (must match Rust code)
-const GRID_SIZE: u32 = 128u;
+const GRID_SIZE: u32 = 256u;
 
 struct WaterInteractorData {
     grid_x: f32,
@@ -147,7 +147,7 @@ fn water_flow_pass(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
         if (interactor.swim_add_height != 0.0 && dist > 0.1 && dist < interactor.swim_radius) {
             let weight = max(0.0, 1.0 - (dist / interactor.swim_radius));
-            let swim_push = interactor.swim_add_height * weight * 30.0; 
+            let swim_push = interactor.swim_add_height * weight * 3.5; 
             flow_x_val += (dx / dist) * swim_push;
             flow_y_val += (dy / dist) * swim_push;
         }
@@ -247,7 +247,7 @@ fn water_height_pass(@builtin(global_invocation_id) global_id: vec3<u32>) {
     }
 
     new_height += height_change * params.delta_time;
-    new_height = max(new_height, 1.0);
+    new_height = max(new_height, 0.1);
 
     // Apply impulse height changes (e.g. mouse clicks or block breaks)
     for (var i = 0u; i < params.impulse_count; i++) {

@@ -1,6 +1,6 @@
+use crate::player::camera::Player;
 use bevy::prelude::*;
 use bevy_rapier3d::prelude::*;
-use crate::player::camera::Player;
 
 pub mod rapier_physics;
 

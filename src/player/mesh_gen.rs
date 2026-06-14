@@ -1,8 +1,5 @@
 use bevy::{
-    prelude::*,
-    asset::RenderAssetUsages,
-    mesh::Indices,
-    render::render_resource::PrimitiveTopology,
+    asset::RenderAssetUsages, mesh::Indices, prelude::*, render::render_resource::PrimitiveTopology,
 };
 use std::collections::HashMap;
 
@@ -18,6 +15,12 @@ pub struct VoxelMeshBuilder {
     vertex_map: HashMap<(i32, i32, i32, usize), u32>,
 }
 
+impl Default for VoxelMeshBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl VoxelMeshBuilder {
     pub fn new() -> Self {
         Self {
@@ -29,10 +32,12 @@ impl VoxelMeshBuilder {
         }
     }
 
-    /// Adds a face to the mesh. 
+    /// Adds a face to the mesh.
     pub fn add_face(
         &mut self,
-        x: i32, y: i32, z: i32,
+        x: i32,
+        y: i32,
+        z: i32,
         face_idx: usize,
         voxel_size: f32,
         color: [f32; 4],
@@ -48,27 +53,63 @@ impl VoxelMeshBuilder {
         ];
 
         let face_verts = [
-            [[1.0, 0.0, 1.0], [1.0, 0.0, 0.0], [1.0, 1.0, 0.0], [1.0, 1.0, 1.0]],
-            [[0.0, 0.0, 0.0], [0.0, 0.0, 1.0], [0.0, 1.0, 1.0], [0.0, 1.0, 0.0]],
-            [[0.0, 1.0, 1.0], [1.0, 1.0, 1.0], [1.0, 1.0, 0.0], [0.0, 1.0, 0.0]],
-            [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 0.0, 1.0], [0.0, 0.0, 1.0]],
-            [[0.0, 0.0, 1.0], [1.0, 0.0, 1.0], [1.0, 1.0, 1.0], [0.0, 1.0, 1.0]],
-            [[1.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 1.0, 0.0], [1.0, 1.0, 0.0]],
+            [
+                [1.0, 0.0, 1.0],
+                [1.0, 0.0, 0.0],
+                [1.0, 1.0, 0.0],
+                [1.0, 1.0, 1.0],
+            ],
+            [
+                [0.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0],
+                [0.0, 1.0, 1.0],
+                [0.0, 1.0, 0.0],
+            ],
+            [
+                [0.0, 1.0, 1.0],
+                [1.0, 1.0, 1.0],
+                [1.0, 1.0, 0.0],
+                [0.0, 1.0, 0.0],
+            ],
+            [
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [1.0, 0.0, 1.0],
+                [0.0, 0.0, 1.0],
+            ],
+            [
+                [0.0, 0.0, 1.0],
+                [1.0, 0.0, 1.0],
+                [1.0, 1.0, 1.0],
+                [0.0, 1.0, 1.0],
+            ],
+            [
+                [1.0, 0.0, 0.0],
+                [0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [1.0, 1.0, 0.0],
+            ],
         ];
 
         let mut face_indices = Vec::new();
         let normal = face_normals[face_idx];
 
-        for i in 0..4 {
-            let local_v = face_verts[face_idx][i];
+        for &local_v in &face_verts[face_idx] {
             let vx = (x as f32 + local_v[0]) * voxel_size;
             let vy = (y as f32 + local_v[1]) * voxel_size;
             let vz = (z as f32 + local_v[2]) * voxel_size;
 
-            let color_key = ((color[0] * 255.0) as i32) | (((color[1] * 255.0) as i32) << 8) | (((color[2] * 255.0) as i32) << 16);
-            
+            let color_key = ((color[0] * 255.0) as i32)
+                | (((color[1] * 255.0) as i32) << 8)
+                | (((color[2] * 255.0) as i32) << 16);
+
             let key = if smooth {
-                ((vx * 1000.0) as i32, (vy * 1000.0) as i32, (vz * 1000.0) as i32, color_key as usize)
+                (
+                    (vx * 1000.0) as i32,
+                    (vy * 1000.0) as i32,
+                    (vz * 1000.0) as i32,
+                    color_key as usize,
+                )
             } else {
                 (self.positions.len() as i32, 0, 0, 0)
             };
@@ -102,7 +143,7 @@ impl VoxelMeshBuilder {
     pub fn build(mut self) -> Mesh {
         // Normalize accumulated normals
         for n in &mut self.normals {
-            let len = (n[0]*n[0] + n[1]*n[1] + n[2]*n[2]).sqrt();
+            let len = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
             if len > 0.0 {
                 n[0] /= len;
                 n[1] /= len;
@@ -110,7 +151,10 @@ impl VoxelMeshBuilder {
             }
         }
 
-        let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
+        let mut mesh = Mesh::new(
+            PrimitiveTopology::TriangleList,
+            RenderAssetUsages::default(),
+        );
         mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, self.positions);
         mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, self.normals);
         mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, self.colors);

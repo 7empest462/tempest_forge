@@ -1,28 +1,31 @@
+use crate::player::combat::{Health, Hittable};
+use crate::voxel::chunk::BlockType;
+use crate::world::noise_generator::NoiseGenerator;
+use crate::world::settlement::{SettlementBuilding, SettlementRegistry};
 use bevy::prelude::*;
 use bevy::tasks::{AsyncComputeTaskPool, Task};
 use bevy_voxel_world::prelude::*;
 use fastrand::Rng as FastRng;
 use futures_lite::future;
-use crate::voxel::chunk::BlockType;
-use crate::world::noise_generator::NoiseGenerator;
-use crate::player::combat::{Health, Hittable};
-use crate::world::settlement::{SettlementRegistry, SettlementBuilding};
 
 #[derive(Component)]
 pub struct TreeEntity;
 // shrubbery: pure-Rust space-colonization library (no Bevy dep)
-use shrubbery::shrubbery::Shrubbery;
 use shrubbery::algorithm_settings::AlgorithmSettings;
 use shrubbery::attractor_generator_settings::AttractorGeneratorSettings;
 use shrubbery::shape::BoxShape;
-use shrubbery::voxel::{voxelize, VoxelizeSettings, BranchSizeSetting, BranchRootSizeIncreaser, LeafSetting};
+use shrubbery::shrubbery::Shrubbery;
+use shrubbery::voxel::{
+    BranchRootSizeIncreaser, BranchSizeSetting, LeafSetting, VoxelizeSettings, voxelize,
+};
 
 // shrubbery uses glam 0.30 — re-export its vec3 so we don't confuse the two glam versions
 use shrubbery::glam::vec3 as svec3;
 
-use bevy_procedural_tree::Tree;
-use bevy_procedural_tree::settings::{TreeMeshSettings, BranchParams, LeafParams, BranchRecursionLevel};
-use bevy_procedural_tree::enums::{TreeType as ProcTreeType};
+use bevy_procedural_tree::enums::TreeType as ProcTreeType;
+use bevy_procedural_tree::settings::{
+    BranchParams, BranchRecursionLevel, LeafParams, TreeMeshSettings,
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tree type enum — controls colonization & leaf parameters per biome
@@ -47,7 +50,9 @@ pub struct TreeGenerator {
 
 impl Default for TreeGenerator {
     fn default() -> Self {
-        Self { rng: FastRng::with_seed(1337) }
+        Self {
+            rng: FastRng::with_seed(1337),
+        }
     }
 }
 
@@ -65,7 +70,8 @@ pub struct TreeGenerationTask {
 pub struct TreeGenerationResult {
     pub pos: IVec3,
     pub _tree_type: TreeType,
-    pub canopy_settings: TreeMeshSettings,
+    pub branch_mesh: Mesh,
+    pub leaf_mesh: Mesh,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -85,27 +91,34 @@ pub fn chunk_vegetation_system(
 ) {
     for (entity, chunk_comp) in query.iter() {
         let chunk_key = chunk_comp.position;
-        
+
         // Avoid spawning trees in settlement chunks
-        let chunk_hash = (chunk_key.x.wrapping_mul(73856093) ^ chunk_key.z.wrapping_mul(19349663)).abs();
+        let chunk_hash =
+            (chunk_key.x.wrapping_mul(73856093) ^ chunk_key.z.wrapping_mul(19349663)).abs();
         let is_settlement_chunk = (chunk_hash % 10) == 0 && (chunk_key.x != 0 || chunk_key.z != 0);
-        
+
         let mut spawn_count = 0;
         let mut rng = FastRng::with_seed((chunk_key.x as u64) << 32 | (chunk_key.z as u64));
 
-        for i in 0..20 { 
-            if is_settlement_chunk { continue; } // Clear the entire settlement chunk of trees
-            
+        for i in 0..20 {
+            if is_settlement_chunk {
+                continue;
+            } // Clear the entire settlement chunk of trees
+
             let x = rng.i32(0..16);
             let z = rng.i32(0..16);
             let world_x = (chunk_key.x * 16) + x;
             let world_z = (chunk_key.z * 16) + z;
-            
+
             let terrain = noise_gen.get_terrain(world_x as f32, world_z as f32);
-            let adjusted_surface = noise_gen.get_adjusted_surface_height(world_x as f32, world_z as f32);
-            
+            let adjusted_surface =
+                noise_gen.get_adjusted_surface_height(world_x as f32, world_z as f32);
+
             // Check if near any house/building (within 7.5 meters)
-            if is_near_settlement_building(Vec3::new(world_x as f32, adjusted_surface, world_z as f32), &registry) {
+            if is_near_settlement_building(
+                Vec3::new(world_x as f32, adjusted_surface, world_z as f32),
+                &registry,
+            ) {
                 continue;
             }
 
@@ -113,55 +126,58 @@ pub fn chunk_vegetation_system(
             let surface_y = adjusted_surface.floor() as i32;
             let chunk_y = (surface_y as f32 / 16.0).floor() as i32;
             if chunk_y != chunk_key.y {
-                continue; 
+                continue;
             }
 
             // 2. Suitability: Trees grow on dry land (above sea level 15.0)
             let flora_val = noise_gen.get_flora(world_x as f32, world_z as f32);
-            
-            // Biome Density: 
+
+            // Biome Density:
             // Forest (> 0.4): High density
             // Sparse Plains (< -0.4): Very low density
             // Regular: Medium density
             let density_limit = if flora_val > 0.4 {
                 14 // Dense Forest
             } else if flora_val < -0.4 {
-                1  // Sparse Plains
+                1 // Sparse Plains
             } else {
                 4 // Regular transition
             };
 
-            if i >= density_limit { continue; }
+            if i >= density_limit {
+                continue;
+            }
 
             if adjusted_surface > 16.0 && adjusted_surface < 120.0 && !terrain.is_desert {
                 let pos = IVec3::new(world_x, surface_y, world_z);
-                
+
                 // Spawn the tree task
                 let tree_type = if flora_val > 0.6 {
                     TreeType::Jungle // Deep forest has bigger trees
                 } else if i % 5 == 0 {
-                    TreeType::Oak 
-                } else { 
-                    TreeType::Pine 
+                    TreeType::Oak
+                } else {
+                    TreeType::Pine
                 };
                 // println!("  QUEUING TREE at {:?} (height {:.1})", pos, adjusted_surface);
-                commands.spawn(TreeSpawnRequest {
-                    pos,
-                    tree_type,
-                });
+                commands.spawn(TreeSpawnRequest { pos, tree_type });
                 spawn_count += 1;
             } else if i == 0 {
                 // Log why we failed at least once per chunk
                 // println!("  Tree skip at {:.1}: desert={}, y_match={}", adjusted_surface, terrain.is_desert, chunk_y == chunk_key.y);
             }
         }
-        
+
         commands.entity(entity).insert(Decorated);
         if spawn_count > 0 {
             // println!("  SPAWNED {} TREE TASKS in chunk {:?}", spawn_count, chunk_key);
         }
 
-        let candidates = if is_settlement_chunk { Vec::new() } else { scatter_candidates(chunk_key, 4, &mut tree_gen.rng) };
+        let candidates = if is_settlement_chunk {
+            Vec::new()
+        } else {
+            scatter_candidates(chunk_key, 4, &mut tree_gen.rng)
+        };
         for pos_2d in candidates {
             // Apply flora moisture check to candidates to match biomes and reduce plains density
             let flora_val = noise_gen.get_flora(pos_2d.x as f32, pos_2d.y as f32);
@@ -180,10 +196,15 @@ pub fn chunk_vegetation_system(
             let Some(height) = crate::world::manager::find_stable_ground_height(
                 Vec3::new(pos_2d.x as f32, 100.0, pos_2d.y as f32),
                 &voxel_world,
-            ) else { continue };
+            ) else {
+                continue;
+            };
 
             // Check if near any house/building (within 7.5 meters)
-            if is_near_settlement_building(Vec3::new(pos_2d.x as f32, height, pos_2d.y as f32), &registry) {
+            if is_near_settlement_building(
+                Vec3::new(pos_2d.x as f32, height, pos_2d.y as f32),
+                &registry,
+            ) {
                 continue;
             }
 
@@ -200,37 +221,30 @@ pub fn chunk_vegetation_system(
             };
 
             let tree_type = match surface_type {
-                BlockType::Grass  => pick_grass_tree(&mut tree_gen.rng),
-                BlockType::Dirt   => Some(TreeType::Oak),
+                BlockType::Grass => pick_grass_tree(&mut tree_gen.rng),
+                BlockType::Dirt => Some(TreeType::Oak),
                 BlockType::Podzol => Some(TreeType::Pine),
                 _ => None,
             };
 
             if let Some(tt) = tree_type {
                 // println!("  SPAWNING {:?} TREE at {:?}", tt, pos);
-                commands.spawn(TreeSpawnRequest {
-                    pos,
-                    tree_type: tt,
-                });
+                commands.spawn(TreeSpawnRequest { pos, tree_type: tt });
             }
         }
     }
 }
 
-pub fn start_tree_generation(
-    mut commands: Commands,
-    requests: Query<(Entity, &TreeSpawnRequest)>,
-) {
+pub fn start_tree_generation(mut commands: Commands, requests: Query<(Entity, &TreeSpawnRequest)>) {
     let thread_pool = AsyncComputeTaskPool::get();
     for (entity, request) in requests.iter() {
         let pos = request.pos;
         let tree_type = request.tree_type;
 
-        let task = thread_pool.spawn(async move {
-            generate_tree_data(pos, tree_type)
-        });
+        let task = thread_pool.spawn(async move { generate_tree_data(pos, tree_type) });
 
-        commands.entity(entity)
+        commands
+            .entity(entity)
             .remove::<TreeSpawnRequest>()
             .insert(TreeGenerationTask { task });
     }
@@ -239,7 +253,7 @@ pub fn start_tree_generation(
 pub fn complete_tree_generation(
     mut commands: Commands,
     mut tasks: Query<(Entity, &mut TreeGenerationTask)>,
-    _meshes: ResMut<Assets<Mesh>>,
+    mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     for (entity, mut task_comp) in tasks.iter_mut() {
@@ -254,25 +268,33 @@ pub fn complete_tree_generation(
                 ..default()
             });
 
+            let branch_mesh_handle = meshes.add(result.branch_mesh);
+            let leaf_mesh_handle = meshes.add(result.leaf_mesh);
+
             // Spawn mesh canopy
-            commands.entity(entity)
+            commands
+                .entity(entity)
                 .remove::<TreeGenerationTask>()
                 .insert((
                     Transform::from_translation(result.pos.as_vec3() + Vec3::new(0.0, 1.0, 0.0)),
                     Visibility::default(),
                     InheritedVisibility::default(),
-                    Tree {
-                        seed: (result.pos.x as u64 ^ result.pos.z as u64),
-                        tree_mesh_settings_override: Some(result.canopy_settings),
-                        bark_material_override: Some(MeshMaterial3d(bark_mat.clone())),
-                        leaf_material_override: Some(MeshMaterial3d(leaf_mat)),
-                    },
+                    Mesh3d(branch_mesh_handle),
                     MeshMaterial3d(bark_mat),
                     bevy_rapier3d::prelude::Collider::cylinder(3.0, 0.4),
                     Hittable,
                     Health::new(50.0), // Trees have 50 HP
                     TreeEntity,
-                ));
+                ))
+                .with_children(|parent| {
+                    parent.spawn((
+                        Mesh3d(leaf_mesh_handle),
+                        MeshMaterial3d(leaf_mat),
+                        Transform::default(),
+                        Visibility::default(),
+                        InheritedVisibility::default(),
+                    ));
+                });
         }
     }
 }
@@ -284,9 +306,14 @@ pub fn complete_tree_generation(
 fn generate_tree_data(base_pos: IVec3, tree_type: TreeType) -> TreeGenerationResult {
     // 1. Shrubbery Voxel Trunk Generation
     let (
-        crown_w, crown_h, crown_offset_y,
-        branch_len, attraction_dist, kill_dist,
-        trunk_min_h, grow_iters,
+        crown_w,
+        crown_h,
+        crown_offset_y,
+        branch_len,
+        attraction_dist,
+        kill_dist,
+        trunk_min_h,
+        grow_iters,
         branch_thickness,
     ) = match tree_type {
         TreeType::Oak => (9.0, 7.0, 6.0, 0.6, 5.5, 0.5, 3.0, 14, 0.55),
@@ -295,10 +322,9 @@ fn generate_tree_data(base_pos: IVec3, tree_type: TreeType) -> TreeGenerationRes
         TreeType::Jungle => (12.0, 5.0, 10.0, 0.65, 6.0, 0.55, 7.0, 16, 0.5),
     };
 
-    let seed = (base_pos.x.unsigned_abs() as u64)
-        .wrapping_mul(2654435761)
+    let seed = (base_pos.x.unsigned_abs() as u64).wrapping_mul(2654435761)
         ^ (base_pos.z.unsigned_abs() as u64).wrapping_mul(1234567891)
-        ^ (tree_type as u64) * 999983;
+        ^ ((tree_type as u64) * 999983);
 
     let algo = AlgorithmSettings {
         seed,
@@ -321,12 +347,20 @@ fn generate_tree_data(base_pos: IVec3, tree_type: TreeType) -> TreeGenerationRes
 
     shrub.spawn_attractors_from_shape(
         svec3(0.0, crown_offset_y, 0.0),
-        BoxShape { x: crown_w, y: crown_h, z: crown_w },
+        BoxShape {
+            x: crown_w,
+            y: crown_h,
+            z: crown_w,
+        },
     );
 
     shrub.build_trunk();
-    for _ in 0..grow_iters { shrub.grow(); }
-    if matches!(tree_type, TreeType::Oak | TreeType::Birch) { shrub.post_process_gravity(0.8); }
+    for _ in 0..grow_iters {
+        shrub.grow();
+    }
+    if matches!(tree_type, TreeType::Oak | TreeType::Birch) {
+        shrub.post_process_gravity(0.8);
+    }
 
     let voxelize_settings = VoxelizeSettings {
         leaf_settings: LeafSetting::None,
@@ -414,10 +448,16 @@ fn generate_tree_data(base_pos: IVec3, tree_type: TreeType) -> TreeGenerationRes
         },
     };
 
+    let mut rng = fastrand::Rng::with_seed(seed);
+    let (branch_mesh, leaf_mesh) =
+        bevy_procedural_tree::meshgen::generate_tree_meshes(&canopy_settings, &mut rng)
+            .expect("Failed to generate tree meshes");
+
     TreeGenerationResult {
         pos: base_pos,
         _tree_type: tree_type,
-        canopy_settings,
+        branch_mesh,
+        leaf_mesh,
     }
 }
 
@@ -429,8 +469,8 @@ fn pick_grass_tree(rng: &mut FastRng) -> Option<TreeType> {
     match rng.u8(0..10) {
         0..=4 => Some(TreeType::Oak),
         5..=7 => Some(TreeType::Birch),
-        8     => Some(TreeType::Jungle),
-        _     => None,
+        8 => Some(TreeType::Jungle),
+        _ => None,
     }
 }
 
@@ -438,29 +478,31 @@ fn scatter_candidates(chunk_2d: IVec3, count: usize, rng: &mut FastRng) -> Vec<I
     let base_x = chunk_2d.x * 16;
     let base_z = chunk_2d.z * 16;
     let cell = 16 / count.max(1) as i32;
-    (0..count).map(|i| {
-        let cx = base_x + (i as i32) * cell + rng.i32(0..cell.max(1));
-        let cz = base_z + rng.i32(0..16);
-        IVec2::new(cx, cz)
-    }).collect()
+    (0..count)
+        .map(|i| {
+            let cx = base_x + (i as i32) * cell + rng.i32(0..cell.max(1));
+            let cz = base_z + rng.i32(0..16);
+            IVec2::new(cx, cz)
+        })
+        .collect()
 }
 
 fn is_near_settlement_building(pos: Vec3, registry: &SettlementRegistry) -> bool {
     const BUILDING_OFFSETS: [(f32, f32); 8] = [
-        (0.0, 16.0),   // Tavern
-        (22.0, 6.0),   // Shop
-        (-22.0, 6.0),  // Forge
-        (0.0, -26.0),  // Farm
-        (18.0, -18.0), // House 1
-        (-18.0, -18.0),// House 2
-        (26.0, -26.0), // Guard Tower
-        (0.0, 0.0),    // Plaza / Well
+        (0.0, 16.0),    // Tavern
+        (22.0, 6.0),    // Shop
+        (-22.0, 6.0),   // Forge
+        (0.0, -26.0),   // Farm
+        (18.0, -18.0),  // House 1
+        (-18.0, -18.0), // House 2
+        (26.0, -26.0),  // Guard Tower
+        (0.0, 0.0),     // Plaza / Well
     ];
-    
+
     for chunk_pos in registry.positions.iter() {
         let town_center_x = (chunk_pos.x * 16 + 8) as f32;
         let town_center_z = (chunk_pos.z * 16 + 8) as f32;
-        
+
         for &(dx, dz) in BUILDING_OFFSETS.iter() {
             let bx = town_center_x + dx;
             let bz = town_center_z + dz;

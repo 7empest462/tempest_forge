@@ -10,7 +10,6 @@ pub struct MachineryPlugin;
 impl Plugin for MachineryPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<MachineryRegistry>()
-           .add_systems(FixedUpdate, (update_power_grid, visualize_rotation));
+            .add_systems(FixedUpdate, (update_power_grid, visualize_rotation));
     }
 }
-
