@@ -18,6 +18,7 @@ use crate::world::noise_generator::NoiseGenerator;
 use bevy::prelude::*;
 use bevy_voxel_world::prelude::VoxelWorld;
 use rand::RngExt;
+use std::collections::HashMap;
 
 /// Plugin for procedural brick wall construction and destruction.
 pub struct ProceduralWallsPlugin;
@@ -149,6 +150,131 @@ impl FromWorld for ProceduralWallAssets {
     }
 }
 
+#[derive(Clone, Copy)]
+struct BrickAdjacency {
+    is_left_edge: bool,
+    is_right_edge: bool,
+    is_top_edge: bool,
+    is_bottom_edge: bool,
+}
+
+fn compute_brick_adjacency(bricks: &[Brick]) -> Vec<BrickAdjacency> {
+    let mut left_edges: HashMap<(i32, i32), Vec<usize>> = HashMap::with_capacity(bricks.len());
+    let mut right_edges: HashMap<(i32, i32), Vec<usize>> = HashMap::with_capacity(bricks.len());
+    let mut top_edges: HashMap<i32, Vec<usize>> = HashMap::new();
+    let mut bottom_edges: HashMap<i32, Vec<usize>> = HashMap::new();
+
+    for (idx, brick) in bricks.iter().enumerate() {
+        let half_bounds = brick.bounds_uv * 0.5;
+        let left = brick.pivot_uv.x - half_bounds.x;
+        let right = brick.pivot_uv.x + half_bounds.x;
+        let bottom = brick.pivot_uv.y - half_bounds.y;
+        let top = brick.pivot_uv.y + half_bounds.y;
+        let row_key = adjacency_key(brick.pivot_uv.y);
+
+        left_edges
+            .entry((adjacency_key(left), row_key))
+            .or_default()
+            .push(idx);
+        right_edges
+            .entry((adjacency_key(right), row_key))
+            .or_default()
+            .push(idx);
+        bottom_edges
+            .entry(adjacency_key(bottom))
+            .or_default()
+            .push(idx);
+        top_edges.entry(adjacency_key(top)).or_default().push(idx);
+    }
+
+    bricks
+        .iter()
+        .enumerate()
+        .map(|(idx, brick)| {
+            let half_bounds = brick.bounds_uv * 0.5;
+            let left = brick.pivot_uv.x - half_bounds.x;
+            let right = brick.pivot_uv.x + half_bounds.x;
+            let bottom = brick.pivot_uv.y - half_bounds.y;
+            let top = brick.pivot_uv.y + half_bounds.y;
+
+            let has_left_neighbor = has_side_neighbor(&right_edges, left, brick.pivot_uv.y, idx);
+            let has_right_neighbor = has_side_neighbor(&left_edges, right, brick.pivot_uv.y, idx);
+            let has_top_neighbor = has_vertical_neighbor(&bottom_edges, top, |other_idx| {
+                let other = &bricks[other_idx];
+                other.pivot_uv.y > brick.pivot_uv.y
+                    && spans_overlap(
+                        brick.pivot_uv.x,
+                        brick.bounds_uv.x,
+                        other.pivot_uv.x,
+                        other.bounds_uv.x,
+                    )
+            });
+            let has_bottom_neighbor = has_vertical_neighbor(&top_edges, bottom, |other_idx| {
+                let other = &bricks[other_idx];
+                other.pivot_uv.y < brick.pivot_uv.y
+                    && spans_overlap(
+                        brick.pivot_uv.x,
+                        brick.bounds_uv.x,
+                        other.pivot_uv.x,
+                        other.bounds_uv.x,
+                    )
+            });
+
+            BrickAdjacency {
+                is_left_edge: !has_left_neighbor,
+                is_right_edge: !has_right_neighbor,
+                is_top_edge: !has_top_neighbor,
+                is_bottom_edge: !has_bottom_neighbor,
+            }
+        })
+        .collect()
+}
+
+fn has_side_neighbor(
+    edge_map: &HashMap<(i32, i32), Vec<usize>>,
+    edge: f32,
+    row: f32,
+    current_idx: usize,
+) -> bool {
+    let edge_key = adjacency_key(edge);
+    let row_key = adjacency_key(row);
+
+    for nearby_edge in (edge_key - 1)..=(edge_key + 1) {
+        for nearby_row in (row_key - 1)..=(row_key + 1) {
+            if edge_map
+                .get(&(nearby_edge, nearby_row))
+                .is_some_and(|neighbors| neighbors.iter().any(|&idx| idx != current_idx))
+            {
+                return true;
+            }
+        }
+    }
+
+    false
+}
+
+fn has_vertical_neighbor(
+    edge_map: &HashMap<i32, Vec<usize>>,
+    edge: f32,
+    mut predicate: impl FnMut(usize) -> bool,
+) -> bool {
+    let edge_key = adjacency_key(edge);
+
+    ((edge_key - 1)..=(edge_key + 1)).any(|nearby_edge| {
+        edge_map
+            .get(&nearby_edge)
+            .is_some_and(|neighbors| neighbors.iter().any(|&idx| predicate(idx)))
+    })
+}
+
+fn adjacency_key(value: f32) -> i32 {
+    (value / 0.02).round() as i32
+}
+
+fn spans_overlap(a_center: f32, a_width: f32, b_center: f32, b_width: f32) -> bool {
+    (b_center - a_center).abs() < (a_width + b_width) * 0.5 - 0.01
+}
+
 /// Handles curve point placement, undo, cancellation, and wall finalization.
 fn update_wall_builder(
     mut builder: ResMut<ProceduralWallBuilder>,
@@ -270,18 +396,34 @@ fn update_wall_builder(
         let bricks = WallConstructor::from_curve(&resampled_curve, builder.height, |pos| {
             crate::world::manager::find_ground_height(pos, &voxel_world).unwrap_or(pos.y)
         });
+        let adjacency = compute_brick_adjacency(&bricks);
+        let active_texture_handle = asset_server.load(active_texture);
+
+        // Determine base color tint depending on selected block style
+        let (base_r, base_g, base_b) = match active_texture {
+            "textures/solid_stone.png" => (0.62, 0.62, 0.64), // Raw chiseled granite gray stone
+            "textures/solid_brick.png" => (0.76, 0.44, 0.30), // Earthy terracotta baked clay
+            "textures/solid_limestone.png" => (0.85, 0.82, 0.74), // Warm medieval cream limestone
+            _ => (0.62, 0.48, 0.42),                          // Default brown
+        };
+
+        // Determine mortar color depending on selected block style
+        let mortar_color = match active_texture {
+            "textures/solid_stone.png" => Color::srgb(0.78, 0.78, 0.76), // Cement/concrete gray mortar
+            "textures/solid_brick.png" => Color::srgb(0.88, 0.86, 0.82), // Warm creamy off-white mortar
+            "textures/solid_limestone.png" => Color::srgb(0.68, 0.66, 0.62), // Sandstone dark gray mortar
+            _ => Color::srgb(0.80, 0.80, 0.80),
+        };
+        let mortar_material = materials.add(StandardMaterial {
+            base_color: mortar_color,
+            perceptual_roughness: 0.95,
+            metallic: 0.0,
+            ..default()
+        });
 
         let mut rng = fastrand::Rng::new();
 
         for (idx, brick) in bricks.iter().enumerate() {
-            // Determine base color tint depending on selected block style
-            let (base_r, base_g, base_b) = match active_texture {
-                "textures/solid_stone.png" => (0.62, 0.62, 0.64), // Raw chiseled granite gray stone
-                "textures/solid_brick.png" => (0.76, 0.44, 0.30), // Earthy terracotta baked clay
-                "textures/solid_limestone.png" => (0.85, 0.82, 0.74), // Warm medieval cream limestone
-                _ => (0.62, 0.48, 0.42),                              // Default brown
-            };
-
             // Organic shade-by-shade block variation for natural, hand-laid masonry look
             let r_off = (rng.f32() - 0.5) * 0.12;
             let g_off = (rng.f32() - 0.5) * 0.10;
@@ -292,14 +434,6 @@ fn update_wall_builder(
                 (base_b + b_off).clamp(0.0, 1.0),
                 1.0,
             );
-
-            // Determine mortar color depending on selected block style
-            let mortar_color = match active_texture {
-                "textures/solid_stone.png" => Color::srgb(0.78, 0.78, 0.76), // Cement/concrete gray mortar
-                "textures/solid_brick.png" => Color::srgb(0.88, 0.86, 0.82), // Warm creamy off-white mortar
-                "textures/solid_limestone.png" => Color::srgb(0.68, 0.66, 0.62), // Sandstone dark gray mortar
-                _ => Color::srgb(0.80, 0.80, 0.80),
-            };
 
             // Spawn parent container (invisible pivot, handles physics and mining damage)
             let brick_pos = brick.transform.translation;
@@ -322,54 +456,13 @@ fn update_wall_builder(
                     InheritedVisibility::default(),
                 ))
                 .with_children(|parent| {
-                    // Dynamic adjacency checking: detect if there are neighboring bricks on any side.
                     // If a neighbor is missing (e.g. at wall boundaries, around doors, or skipped on the top row),
                     // the corresponding face is exposed to air and must be capped with full stone and recessed mortar.
-                    let has_left_neighbor = bricks.iter().enumerate().any(|(i, other)| {
-                        i != idx
-                            && (other.pivot_uv.y - brick.pivot_uv.y).abs() < 0.01
-                            && (brick.pivot_uv.x
-                                - brick.bounds_uv.x / 2.0
-                                - (other.pivot_uv.x + other.bounds_uv.x / 2.0))
-                                .abs()
-                                < 0.02
-                    });
-                    let has_right_neighbor = bricks.iter().enumerate().any(|(i, other)| {
-                        i != idx
-                            && (other.pivot_uv.y - brick.pivot_uv.y).abs() < 0.01
-                            && (other.pivot_uv.x
-                                - other.bounds_uv.x / 2.0
-                                - (brick.pivot_uv.x + brick.bounds_uv.x / 2.0))
-                                .abs()
-                                < 0.02
-                    });
-                    let has_top_neighbor = bricks.iter().enumerate().any(|(i, other)| {
-                        i != idx
-                            && other.pivot_uv.y > brick.pivot_uv.y
-                            && (other.pivot_uv.y
-                                - other.bounds_uv.y / 2.0
-                                - (brick.pivot_uv.y + brick.bounds_uv.y / 2.0))
-                                .abs()
-                                < 0.02
-                            && (other.pivot_uv.x - brick.pivot_uv.x).abs()
-                                < (brick.bounds_uv.x + other.bounds_uv.x) / 2.0 - 0.01
-                    });
-                    let has_bottom_neighbor = bricks.iter().enumerate().any(|(i, other)| {
-                        i != idx
-                            && other.pivot_uv.y < brick.pivot_uv.y
-                            && (brick.pivot_uv.y
-                                - brick.bounds_uv.y / 2.0
-                                - (other.pivot_uv.y + other.bounds_uv.y / 2.0))
-                                .abs()
-                                < 0.02
-                            && (other.pivot_uv.x - brick.pivot_uv.x).abs()
-                                < (brick.bounds_uv.x + other.bounds_uv.x) / 2.0 - 0.01
-                    });
-
-                    let is_left = !has_left_neighbor;
-                    let is_right = !has_right_neighbor;
-                    let is_top = !has_top_neighbor;
-                    let is_bottom = !has_bottom_neighbor;
+                    let brick_adjacency = adjacency[idx];
+                    let is_left = brick_adjacency.is_left_edge;
+                    let is_right = brick_adjacency.is_right_edge;
+                    let is_top = brick_adjacency.is_top_edge;
+                    let is_bottom = brick_adjacency.is_bottom_edge;
 
                     // Calculate Stone visual shrinkage: do not shrink edges exposed to the outer borders or empty space!
                     let left_shrink = if is_left { 0.0 } else { 0.02 };
@@ -393,7 +486,7 @@ fn update_wall_builder(
                         Mesh3d(procedural_wall_assets.unit_cube.clone()),
                         MeshMaterial3d(materials.add(StandardMaterial {
                             base_color: brick_color,
-                            base_color_texture: Some(asset_server.load(active_texture)),
+                            base_color_texture: Some(active_texture_handle.clone()),
                             perceptual_roughness: 0.88,
                             metallic: 0.02,
                             ..default()
@@ -425,12 +518,7 @@ fn update_wall_builder(
                     // Child 2: The solid colored recessed mortar backing (pulled back from outer edges)
                     parent.spawn((
                         Mesh3d(procedural_wall_assets.unit_cube.clone()),
-                        MeshMaterial3d(materials.add(StandardMaterial {
-                            base_color: mortar_color,
-                            perceptual_roughness: 0.95, // Mortar is very rough
-                            metallic: 0.0,
-                            ..default()
-                        })),
+                        MeshMaterial3d(mortar_material.clone()),
                         Transform {
                             translation: Vec3::new(mortar_trans_x, mortar_trans_y, 0.0), // Centered mortar fill
                             scale: Vec3::new(mortar_rel_x.max(0.1), mortar_rel_y.max(0.1), 0.80),
@@ -491,6 +579,13 @@ fn spawn_arch_voussoirs(
         "textures/solid_limestone.png" => Color::srgb(0.68, 0.66, 0.62),
         _ => Color::srgb(0.80, 0.80, 0.80),
     };
+    let active_texture_handle = asset_server.load(active_texture);
+    let mortar_material = materials.add(StandardMaterial {
+        base_color: mortar_color,
+        perceptual_roughness: 0.95,
+        metallic: 0.0,
+        ..default()
+    });
 
     for voussoir in &voussoirs {
         let r_off = (rng.f32() - 0.5) * 0.10;
@@ -531,7 +626,7 @@ fn spawn_arch_voussoirs(
                     Mesh3d(procedural_wall_assets.unit_cube.clone()),
                     MeshMaterial3d(materials.add(StandardMaterial {
                         base_color: brick_color,
-                        base_color_texture: Some(asset_server.load(active_texture)),
+                        base_color_texture: Some(active_texture_handle.clone()),
                         perceptual_roughness: 0.90,
                         metallic: 0.01,
                         ..default()
@@ -545,12 +640,7 @@ fn spawn_arch_voussoirs(
                 // Mortar backing
                 parent.spawn((
                     Mesh3d(procedural_wall_assets.unit_cube.clone()),
-                    MeshMaterial3d(materials.add(StandardMaterial {
-                        base_color: mortar_color,
-                        perceptual_roughness: 0.95,
-                        metallic: 0.0,
-                        ..default()
-                    })),
+                    MeshMaterial3d(mortar_material.clone()),
                     Transform {
                         translation: Vec3::ZERO,
                         scale: Vec3::new(0.96, 0.96, 0.80),

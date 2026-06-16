@@ -31,6 +31,7 @@ impl WallConstructor {
         let mut rng = fastrand::Rng::with_seed(0);
 
         let wall_length: f32 = curve.length;
+        let bricks_per_row = (wall_length / BRICK_WIDTH).ceil().max(1.0) as usize;
 
         // Calculate curve span and vertical top in world space using true ground heights
         let mut min_y = f32::INFINITY;
@@ -50,16 +51,22 @@ impl WallConstructor {
         // Calculate rows globally from the flat top down to the lowest ground
         let max_row_count = (max_span / BRICK_HEIGHT).ceil().max(1.0) as usize;
 
-        let rows = random_splits(max_row_count, BRICK_HEIGHT_VARIANCE / max_span, &mut rng);
-        let bricks_per_row = (wall_length / BRICK_WIDTH).ceil().max(1.0) as usize;
+        let mut bricks = Vec::with_capacity(
+            max_row_count * bricks_per_row + (max_row_count * bricks_per_row) / 3,
+        );
 
-        let mut bricks = Vec::new();
+        let mut split_points: Vec<f32> = Vec::with_capacity(bricks_per_row + 2);
+        let mut perturbed: Vec<f32> = Vec::with_capacity(bricks_per_row + 2);
+        let mut brick_row: Vec<Brick> = Vec::with_capacity(bricks_per_row + bricks_per_row / 2);
+
+        let rows = random_splits(max_row_count, BRICK_HEIGHT_VARIANCE / max_span, &mut rng);
+
         for r in 0..max_row_count {
             let row_u = rows[r];
 
             // Stagger alternate rows (running bond pattern!)
             let is_odd = r % 2 == 1;
-            let mut split_points = Vec::new();
+            split_points.clear();
             if is_odd {
                 split_points.push(0.0);
                 for k in 1..=bricks_per_row {
@@ -70,14 +77,19 @@ impl WallConstructor {
                 }
                 split_points.push(1.0);
             } else {
-                split_points = (0..=bricks_per_row)
-                    .map(|k| k as f32 / bricks_per_row as f32)
-                    .collect();
+                for k in 0..=bricks_per_row {
+                    split_points.push(k as f32 / bricks_per_row as f32);
+                }
             }
 
-            // Perturb splits slightly for organic variation (running bond with hand-built look!)
-            let brick_widths =
-                perturb_splits(&split_points, BRICK_WIDTH_VARIANCE / wall_length, &mut rng);
+            perturbed.clear();
+            perturb_splits_into(
+                &split_points,
+                BRICK_WIDTH_VARIANCE / wall_length,
+                &mut rng,
+                &mut perturbed,
+            );
+            let brick_widths = &perturbed;
 
             let brick_height = if let Some(&next_row_u) = rows.get(r + 1) {
                 (next_row_u - row_u) * max_span
@@ -85,7 +97,7 @@ impl WallConstructor {
                 BRICK_HEIGHT + (rng.f32() - 0.5) * BRICK_HEIGHT_VARIANCE
             };
 
-            let mut brick_row: Vec<Brick> = Vec::new();
+            brick_row.clear();
             for j in 0..brick_widths.len() {
                 if let Some(&next_u) = brick_widths.get(j + 1) {
                     let this_u = brick_widths[j];
@@ -170,13 +182,14 @@ impl WallConstructor {
                 // Calculate absolute vertical translation
                 brick.transform.translation.y = top_y - brick.pivot_uv.y * max_span;
 
-                let curve_tangent = curve.get_tangent_at_u(brick.pivot_uv.x);
-                let normal = curve_tangent.cross(Vec3::Y);
+                let curve_tangent = curve.get_tangent_at_u(brick.pivot_uv.x).normalize_or_zero();
+                let up = Vec3::Y;
+                let normal = curve_tangent.cross(up).normalize_or_zero();
                 brick.transform.rotation =
-                    Quat::from_mat3(&Mat3::from_cols(curve_tangent, Vec3::Y, normal));
+                    Quat::from_mat3(&Mat3::from_cols(curve_tangent, up, normal));
             }
 
-            bricks.extend(brick_row);
+            bricks.append(&mut brick_row);
         }
 
         bricks
@@ -202,17 +215,93 @@ fn random_splits(splits: usize, variance_u: f32, rng: &mut Rng) -> Vec<f32> {
         .collect()
 }
 
-/// Perturbs the staggered split points along a row for organic hand-masonry variety.
-fn perturb_splits(splits: &[f32], variance_u: f32, rng: &mut Rng) -> Vec<f32> {
-    splits
-        .iter()
-        .enumerate()
-        .map(|(i, &u)| {
-            if i != 0 && i != splits.len() - 1 {
-                (u + (rng.f32() - 0.5) * variance_u).clamp(0.0, 1.0)
-            } else {
-                u
+/// Perturbs the staggered split points along a row, writing into an output buffer to avoid allocations.
+fn perturb_splits_into(splits: &[f32], variance_u: f32, rng: &mut Rng, out: &mut Vec<f32>) {
+    out.reserve(splits.len());
+    for (i, &u) in splits.iter().enumerate() {
+        if i != 0 && i != splits.len() - 1 {
+            out.push((u + (rng.f32() - 0.5) * variance_u).clamp(0.0, 1.0));
+        } else {
+            out.push(u);
+        }
+    }
+}
+
+/// A chunk of wall bricks in a contiguous span along the curve (u-space).
+pub struct BrickSegment {
+    pub u_start: f32,
+    pub u_end: f32,
+    pub bricks: Vec<Brick>,
+}
+
+/// Axis-aligned bounding box for a wall segment.
+pub struct Aabb {
+    pub min: Vec3,
+    pub max: Vec3,
+}
+
+impl BrickSegment {
+    /// Compute a conservative AABB in world space that contains all bricks in this segment.
+    pub fn compute_aabb(&self) -> Option<Aabb> {
+        if self.bricks.is_empty() {
+            return None;
+        }
+        let mut min = Vec3::splat(f32::INFINITY);
+        let mut max = Vec3::splat(f32::NEG_INFINITY);
+        for b in &self.bricks {
+            let t = b.transform.translation;
+            let rot = b.transform.rotation;
+            let half = (b.transform.scale.abs()) * 0.5;
+            let right = (rot * Vec3::X).abs();
+            let up = (rot * Vec3::Y).abs();
+            let forward = (rot * Vec3::Z).abs();
+            let ext = right * half.x + up * half.y + forward * half.z;
+            let bmin = t - ext;
+            let bmax = t + ext;
+            min.x = min.x.min(bmin.x);
+            min.y = min.y.min(bmin.y);
+            min.z = min.z.min(bmin.z);
+            max.x = max.x.max(bmax.x);
+            max.y = max.y.max(bmax.y);
+            max.z = max.z.max(bmax.z);
+        }
+        Some(Aabb { min, max })
+    }
+}
+
+impl WallConstructor {
+    /// Construct wall bricks and group them into segments for culling/spatial batching.
+    /// `segment_length` is measured in world units along the curve.
+    pub fn from_curve_chunked(
+        curve: &Curve,
+        wall_height: f32,
+        get_ground_y: impl Fn(Vec3) -> f32,
+        segment_length: f32,
+    ) -> Vec<BrickSegment> {
+        let bricks = Self::from_curve(curve, wall_height, get_ground_y);
+        let wall_length = curve.length.max(0.0001);
+        let segments_count = ((wall_length / segment_length).ceil() as usize).max(1);
+
+        let mut segments: Vec<BrickSegment> = Vec::with_capacity(segments_count);
+        for i in 0..segments_count {
+            let u_start = ((i as f32) * segment_length / wall_length).clamp(0.0, 1.0);
+            let u_end = (((i + 1) as f32) * segment_length / wall_length).min(1.0);
+            segments.push(BrickSegment {
+                u_start,
+                u_end,
+                bricks: Vec::new(),
+            });
+        }
+
+        for brick in bricks {
+            let u = brick.pivot_uv.x.clamp(0.0, 1.0);
+            let mut idx = ((u * wall_length) / segment_length).floor() as usize;
+            if idx >= segments_count {
+                idx = segments_count - 1;
             }
-        })
-        .collect()
+            segments[idx].bricks.push(brick);
+        }
+
+        segments
+    }
 }

@@ -8,7 +8,8 @@ impl Plugin for EnvironmentPlugin {
         app.insert_resource(TimeOfDay::default())
             .add_systems(Update, update_time)
             .add_systems(Update, update_sun)
-            .add_systems(Update, update_sky);
+            .add_systems(Update, update_sky)
+            .add_systems(Update, update_light_shadows);
     }
 }
 
@@ -104,4 +105,20 @@ fn update_sky(time_of_day: Res<TimeOfDay>, mut clear_color: ResMut<ClearColor>) 
     };
 
     clear_color.0 = sky_color;
+}
+
+fn update_light_shadows(
+    time_of_day: Res<TimeOfDay>,
+    mut lights: Query<(&mut DirectionalLight, Option<&Sun>, Option<&Moon>)>,
+) {
+    let hour = time_of_day.hour;
+    let is_day = (6.0..18.0).contains(&hour);
+
+    for (mut light, sun, moon) in lights.iter_mut() {
+        if sun.is_some() {
+            light.shadows_enabled = is_day;
+        } else if moon.is_some() {
+            light.shadows_enabled = !is_day;
+        }
+    }
 }

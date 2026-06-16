@@ -53,6 +53,10 @@ pub const MAX_HEIGHT_MISMATCH: f32 = 0.5;
 /// auto-arch bridging.
 pub const AUTO_ARCH_ENDPOINT_DIST: f32 = 3.5;
 
+const MIN_ARCH_SPAN_SQ: f32 = MIN_ARCH_SPAN * MIN_ARCH_SPAN;
+const MAX_ARCH_SPAN_SQ: f32 = MAX_ARCH_SPAN * MAX_ARCH_SPAN;
+const AUTO_ARCH_ENDPOINT_DIST_SQ: f32 = AUTO_ARCH_ENDPOINT_DIST * AUTO_ARCH_ENDPOINT_DIST;
+
 // ---------------------------------------------------------------------------
 // Public types
 // ---------------------------------------------------------------------------
@@ -92,12 +96,13 @@ pub fn generate_arch(opening: &ArchOpening) -> Vec<ArchBrick> {
 
     // Horizontal span vector (ignore Y for span calculation)
     let span_vec_xz = Vec3::new(right.x - left.x, 0.0, right.z - left.z);
-    let span = span_vec_xz.length();
+    let span_sq = span_vec_xz.length_squared();
 
-    if !(MIN_ARCH_SPAN..=MAX_ARCH_SPAN).contains(&span) {
+    if !(MIN_ARCH_SPAN_SQ..=MAX_ARCH_SPAN_SQ).contains(&span_sq) {
         return Vec::new();
     }
 
+    let span = span_sq.sqrt();
     let radius = span / 2.0;
 
     // Arch centre sits at the midpoint horizontally, resting flush on the imposts.
@@ -121,36 +126,32 @@ pub fn generate_arch(opening: &ArchOpening) -> Vec<ArchBrick> {
         // Angle goes from PI (left) → 0 (right) so that Y is upward.
         let arc_t_mid = (i as f32 + 0.5) / num_voussoirs as f32;
         let angle_mid = PI * (1.0 - arc_t_mid);
+        let (mid_sin, mid_cos) = angle_mid.sin_cos();
 
         // arc_t for the two edges (used for scale calculation)
         let arc_t_lo = i as f32 / num_voussoirs as f32;
         let arc_t_hi = (i as f32 + 1.0) / num_voussoirs as f32;
         let angle_lo = PI * (1.0 - arc_t_lo);
         let angle_hi = PI * (1.0 - arc_t_hi);
+        let (lo_sin, lo_cos) = angle_lo.sin_cos();
+        let (hi_sin, hi_cos) = angle_hi.sin_cos();
 
         // Centroid position on the arch centreline.
         // In the arch's local 2-D frame: X along span, Y vertical.
-        let pos_local_mid = Vec2::new(angle_mid.cos() * radius, angle_mid.sin() * radius);
+        let pos_local_mid = Vec2::new(mid_cos * radius, mid_sin * radius);
 
         // Centroid in world space.
         let centroid = center + span_dir * pos_local_mid.x + Vec3::Y * pos_local_mid.y;
 
-        // Radial outward direction — computed for reference, used to derive local_y
-        let _radial_out = (centroid - center).normalize();
-
         // Tangent along the arch at this voussoir (perpendicular to radial in the arch plane).
         // Points from left-impost side toward right-impost side.
-        let tangent_local_lo = Vec2::new(angle_lo.cos(), angle_lo.sin());
-        let tangent_local_hi = Vec2::new(angle_hi.cos(), angle_hi.sin());
-        let tang_mid_local = (tangent_local_hi - tangent_local_lo).normalize();
+        let tang_mid_local = Vec2::new(hi_cos - lo_cos, hi_sin - lo_sin).normalize();
         // The tangent in world space (rotated into span_dir / Y plane):
         let arc_tangent = span_dir * tang_mid_local.x + Vec3::Y * tang_mid_local.y;
 
         // Approximate arc-width at this voussoir (chord between its two edge positions).
-        let pos_lo =
-            center + span_dir * (angle_lo.cos() * radius) + Vec3::Y * (angle_lo.sin() * radius);
-        let pos_hi =
-            center + span_dir * (angle_hi.cos() * radius) + Vec3::Y * (angle_hi.sin() * radius);
+        let pos_lo = center + span_dir * (lo_cos * radius) + Vec3::Y * (lo_sin * radius);
+        let pos_hi = center + span_dir * (hi_cos * radius) + Vec3::Y * (hi_sin * radius);
         let actual_arc_width = pos_lo.distance(pos_hi).max(0.05);
 
         // Build rotation: local X = along arc tangent, local Y = radially outward,
@@ -191,6 +192,7 @@ pub fn generate_arch(opening: &ArchOpening) -> Vec<ArchBrick> {
 /// Feet (arc_t near 0 or 1) appear first; keystone (arc_t = 0.5) appears last.
 /// Total spread: ~0.5 s.
 pub fn voussoir_spawn_delay(arc_t: f32) -> f32 {
+    let arc_t = arc_t.clamp(0.0, 1.0);
     // Delay is proportional to how close to the keystone the brick is.
     // |arc_t - 0.5| is 0.5 at the feet and 0.0 at the keystone.
     let closeness_to_keystone = 1.0 - (arc_t - 0.5).abs() * 2.0; // 0 at feet, 1 at keystone
@@ -224,8 +226,8 @@ pub fn find_arch_openings(endpoints: &[WallEndpoint]) -> Vec<ArchOpening> {
             let b_xz = Vec2::new(b.top_center.x, b.top_center.z);
             let dist_sq = a_xz.distance_squared(b_xz);
 
-            // Must be within bridging range (MIN_ARCH_SPAN = 0.6, sq = 0.36; AUTO_ARCH_ENDPOINT_DIST = 3.5, sq = 12.25)
-            if !(0.36..=12.25).contains(&dist_sq) {
+            // Must be within bridging range.
+            if !(MIN_ARCH_SPAN_SQ..=AUTO_ARCH_ENDPOINT_DIST_SQ).contains(&dist_sq) {
                 continue;
             }
 
@@ -250,4 +252,85 @@ pub fn find_arch_openings(endpoints: &[WallEndpoint]) -> Vec<ArchOpening> {
     }
 
     openings
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn generate_arch_rejects_spans_outside_limits() {
+        let too_small = ArchOpening {
+            left_foot: Vec3::ZERO,
+            right_foot: Vec3::new(MIN_ARCH_SPAN * 0.5, 0.0, 0.0),
+        };
+        let too_large = ArchOpening {
+            left_foot: Vec3::ZERO,
+            right_foot: Vec3::new(MAX_ARCH_SPAN + 0.1, 0.0, 0.0),
+        };
+
+        assert!(generate_arch(&too_small).is_empty());
+        assert!(generate_arch(&too_large).is_empty());
+    }
+
+    #[test]
+    fn generate_arch_creates_valid_voussoirs() {
+        let opening = ArchOpening {
+            left_foot: Vec3::ZERO,
+            right_foot: Vec3::new(2.0, 0.0, 0.0),
+        };
+        let arch = generate_arch(&opening);
+
+        assert!(!arch.is_empty());
+        assert!(arch.iter().all(|brick| brick.transform.scale.x > 0.0));
+        assert!(
+            arch.iter()
+                .all(|brick| brick.transform.scale.y == VOUSSOIR_RADIAL_HEIGHT)
+        );
+        assert!(
+            arch.iter()
+                .all(|brick| brick.transform.scale.z == ARCH_DEPTH)
+        );
+    }
+
+    #[test]
+    fn spawn_delay_is_clamped_and_keystone_is_latest() {
+        let left_foot = voussoir_spawn_delay(0.0);
+        let keystone = voussoir_spawn_delay(0.5);
+        let right_foot = voussoir_spawn_delay(1.0);
+
+        assert_eq!(left_foot, 0.0);
+        assert_eq!(right_foot, 0.0);
+        assert!(keystone > left_foot);
+        assert_eq!(voussoir_spawn_delay(-1.0), left_foot);
+        assert_eq!(voussoir_spawn_delay(2.0), right_foot);
+    }
+
+    #[test]
+    fn find_arch_openings_uses_configured_span_limits() {
+        let endpoints = [
+            WallEndpoint {
+                top_center: Vec3::ZERO,
+                bottom_center: Vec3::ZERO,
+                is_right_end: false,
+            },
+            WallEndpoint {
+                top_center: Vec3::new(AUTO_ARCH_ENDPOINT_DIST, 0.0, 0.0),
+                bottom_center: Vec3::new(AUTO_ARCH_ENDPOINT_DIST, 0.0, 0.0),
+                is_right_end: true,
+            },
+            WallEndpoint {
+                top_center: Vec3::new(AUTO_ARCH_ENDPOINT_DIST + 0.1, 0.0, 0.0),
+                bottom_center: Vec3::new(AUTO_ARCH_ENDPOINT_DIST + 0.1, 0.0, 0.0),
+                is_right_end: true,
+            },
+        ];
+
+        let openings = find_arch_openings(&endpoints);
+
+        assert_eq!(openings.len(), 1);
+        assert!(openings.iter().any(|opening| {
+            opening.left_foot == endpoints[0].top_center
+                && opening.right_foot == endpoints[1].top_center
+        }));
+    }
 }

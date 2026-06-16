@@ -31,6 +31,7 @@ pub fn start_game() {
     let is_dev = false;
 
     let mut app = App::new();
+    // app.insert_resource(Msaa::Sample2);  <-- REMOVED as per instructions
 
     #[allow(unused_mut)]
     let mut plugins = DefaultPlugins.set(WindowPlugin {
@@ -66,7 +67,9 @@ pub fn start_game() {
     app.init_state::<GameState>()
         .add_plugins(bevy_rapier3d::prelude::RapierPhysicsPlugin::<()>::default())
         .add_plugins(bevy_hanabi::HanabiPlugin)
-        .add_plugins(bevy_egui::EguiPlugin::default());
+        .add_plugins(bevy_egui::EguiPlugin::default())
+        .add_plugins(bevy::diagnostic::FrameTimeDiagnosticsPlugin::default())
+        .add_plugins(bevy::diagnostic::EntityCountDiagnosticsPlugin::default());
 
     if is_dev {
         app.add_plugins(bevy_inspector_egui::quick::WorldInspectorPlugin::new())
@@ -88,7 +91,6 @@ pub fn start_game() {
         .add_systems(Startup, setup)
         .run();
 }
-
 fn register_custom_inspector(type_registry: Res<AppTypeRegistry>) {
     let custom_impl = bevy_inspector_egui::inspector_egui_impls::InspectorEguiImpl::new(
         |val_any, ui, _, _, _| {

@@ -18,6 +18,9 @@ pub struct ChimneySmokeEffect(pub Handle<EffectAsset>);
 #[derive(Resource)]
 pub struct BlacksmithSparkEffect(pub Handle<EffectAsset>);
 
+#[derive(Resource)]
+pub struct BloodSplashEffect(pub Handle<EffectAsset>);
+
 impl Plugin for ParticleEffectsPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
@@ -27,6 +30,7 @@ impl Plugin for ParticleEffectsPlugin {
                 setup_thruster_effect,
                 setup_chimney_smoke_effect,
                 setup_blacksmith_spark_effect,
+                setup_blood_splash_effect,
             ),
         );
         app.add_systems(Update, spawn_laser_particles);
@@ -34,14 +38,13 @@ impl Plugin for ParticleEffectsPlugin {
 }
 
 fn setup_laser_effect(mut commands: Commands, mut effects: ResMut<Assets<EffectAsset>>) {
-    let mut color_gradient = Gradient::new();
-    color_gradient.add_key(0.0, Vec4::new(1.0, 1.0, 1.0, 1.0)); // White hot
-    color_gradient.add_key(0.2, Vec4::new(0.0, 1.0, 1.0, 1.0)); // Cyan glow
-    color_gradient.add_key(1.0, Vec4::new(0.0, 0.5, 0.8, 0.0)); // Fade out
+    let color_gradient = Gradient::from_keys([
+        (0.0, Vec4::new(1.0, 1.0, 1.0, 1.0)), // White hot
+        (0.2, Vec4::new(0.0, 1.0, 1.0, 1.0)), // Cyan glow
+        (1.0, Vec4::new(0.0, 0.5, 0.8, 0.0)), // Fade out
+    ]);
 
-    let mut size_gradient = Gradient::new();
-    size_gradient.add_key(0.0, Vec3::splat(0.1));
-    size_gradient.add_key(1.0, Vec3::splat(0.0));
+    let size_gradient = Gradient::linear(Vec3::splat(0.1), Vec3::splat(0.0));
 
     let mut module = Module::default();
 
@@ -66,7 +69,7 @@ fn setup_laser_effect(mut commands: Commands, mut effects: ResMut<Assets<EffectA
         .init(init_vel)
         .render(ColorOverLifetimeModifier {
             gradient: color_gradient,
-            ..default()
+            ..Default::default()
         })
         .render(SizeOverLifetimeModifier {
             gradient: size_gradient,
@@ -96,17 +99,18 @@ fn spawn_laser_particles(
 }
 
 fn setup_thruster_effect(mut commands: Commands, mut effects: ResMut<Assets<EffectAsset>>) {
-    let mut color_gradient = Gradient::new();
-    // Intense HDR Glowing cyan/blue plasma jet (super high-tech, matches the mech laser!)
-    color_gradient.add_key(0.0, Vec4::new(3.0, 3.0, 3.0, 1.0)); // Intense HDR white core
-    color_gradient.add_key(0.12, Vec4::new(0.0, 2.5, 3.0, 1.0)); // Glowing HDR vibrant cyan
-    color_gradient.add_key(0.5, Vec4::new(0.0, 0.8, 3.0, 0.8)); // Glowing HDR electric blue
-    color_gradient.add_key(1.0, Vec4::new(0.0, 0.0, 1.0, 0.0)); // Deep blue fade-out
+    let color_gradient = Gradient::from_keys([
+        (0.0, Vec4::new(3.0, 3.0, 3.0, 1.0)),  // Intense HDR white core
+        (0.12, Vec4::new(0.0, 2.5, 3.0, 1.0)), // Glowing HDR vibrant cyan
+        (0.5, Vec4::new(0.0, 0.8, 3.0, 0.8)),  // Glowing HDR electric blue
+        (1.0, Vec4::new(0.0, 0.0, 1.0, 0.0)),  // Deep blue fade-out
+    ]);
 
-    let mut size_gradient = Gradient::new();
-    size_gradient.add_key(0.0, Vec3::splat(0.35)); // Thick, intense jet nozzle flare
-    size_gradient.add_key(0.4, Vec3::splat(0.18)); // Sizzling stream
-    size_gradient.add_key(1.0, Vec3::splat(0.0));
+    let size_gradient = Gradient::from_keys([
+        (0.0, Vec3::splat(0.35)), // Thick, intense jet nozzle flare
+        (0.4, Vec3::splat(0.18)), // Sizzling stream
+        (1.0, Vec3::splat(0.0)),
+    ]);
 
     let mut module = Module::default();
 
@@ -145,15 +149,17 @@ fn setup_thruster_effect(mut commands: Commands, mut effects: ResMut<Assets<Effe
 }
 
 fn setup_chimney_smoke_effect(mut commands: Commands, mut effects: ResMut<Assets<EffectAsset>>) {
-    let mut color_gradient = Gradient::new();
-    color_gradient.add_key(0.0, Vec4::new(0.45, 0.45, 0.47, 0.45)); // Warm chimney grey smoke
-    color_gradient.add_key(0.5, Vec4::new(0.55, 0.55, 0.55, 0.22)); // Fades out
-    color_gradient.add_key(1.0, Vec4::new(0.65, 0.65, 0.65, 0.0)); // Disappears
+    let color_gradient = Gradient::from_keys([
+        (0.0, Vec4::new(0.45, 0.45, 0.47, 0.45)), // Warm chimney grey smoke
+        (0.5, Vec4::new(0.55, 0.55, 0.55, 0.22)), // Fades out
+        (1.0, Vec4::new(0.65, 0.65, 0.65, 0.0)),  // Disappears
+    ]);
 
-    let mut size_gradient = Gradient::new();
-    size_gradient.add_key(0.0, Vec3::splat(0.18)); // Base chimney opening size
-    size_gradient.add_key(0.5, Vec3::splat(0.42)); // Spreads out
-    size_gradient.add_key(1.0, Vec3::splat(0.72));
+    let size_gradient = Gradient::from_keys([
+        (0.0, Vec3::splat(0.18)), // Base chimney opening size
+        (0.5, Vec3::splat(0.42)), // Spreads out
+        (1.0, Vec3::splat(0.72)),
+    ]);
 
     let mut module = Module::default();
     let init_pos = SetPositionSphereModifier {
@@ -191,14 +197,13 @@ fn setup_chimney_smoke_effect(mut commands: Commands, mut effects: ResMut<Assets
 }
 
 fn setup_blacksmith_spark_effect(mut commands: Commands, mut effects: ResMut<Assets<EffectAsset>>) {
-    let mut color_gradient = Gradient::new();
-    color_gradient.add_key(0.0, Vec4::new(4.5, 2.5, 0.5, 1.0)); // Ultra bright HDR golden-white core
-    color_gradient.add_key(0.4, Vec4::new(3.0, 1.0, 0.0, 0.85)); // Deep warm orange glowing sparks
-    color_gradient.add_key(1.0, Vec4::new(1.2, 0.0, 0.0, 0.0)); // Fade out red hot embers
+    let color_gradient = Gradient::from_keys([
+        (0.0, Vec4::new(4.5, 2.5, 0.5, 1.0)), // Ultra bright HDR golden-white core
+        (0.4, Vec4::new(3.0, 1.0, 0.0, 0.85)), // Deep warm orange glowing sparks
+        (1.0, Vec4::new(1.2, 0.0, 0.0, 0.0)), // Fade out red hot embers
+    ]);
 
-    let mut size_gradient = Gradient::new();
-    size_gradient.add_key(0.0, Vec3::splat(0.09));
-    size_gradient.add_key(1.0, Vec3::splat(0.015));
+    let size_gradient = Gradient::linear(Vec3::splat(0.09), Vec3::splat(0.015));
 
     let mut module = Module::default();
 
@@ -234,4 +239,54 @@ fn setup_blacksmith_spark_effect(mut commands: Commands, mut effects: ResMut<Ass
 
     let handle = effects.add(effect);
     commands.insert_resource(BlacksmithSparkEffect(handle));
+}
+
+fn setup_blood_splash_effect(mut commands: Commands, mut effects: ResMut<Assets<EffectAsset>>) {
+    let color_gradient = Gradient::from_keys([
+        (0.0, Vec4::new(0.8, 0.0, 0.0, 1.0)),  // Bright red blood
+        (0.6, Vec4::new(0.4, 0.0, 0.0, 0.85)), // Darker coagulated red
+        (1.0, Vec4::new(0.15, 0.0, 0.0, 0.0)), // Fading out
+    ]);
+
+    let size_gradient = Gradient::linear(Vec3::splat(0.12), Vec3::splat(0.02));
+
+    let mut module = Module::default();
+
+    let init_pos = SetPositionSphereModifier {
+        center: module.lit(Vec3::ZERO),
+        radius: module.lit(0.08),
+        dimension: ShapeDimension::Volume,
+    };
+
+    // Splash outwards in all directions with some upward bias
+    let init_vel = SetVelocitySphereModifier {
+        center: module.lit(Vec3::new(0.0, 0.5, 0.0)),
+        speed: module.lit(3.5),
+    };
+
+    let init_lifetime = SetAttributeModifier::new(Attribute::LIFETIME, module.lit(0.6));
+
+    // Gravity pulls blood drops down
+    let accel = module.lit(Vec3::new(0.0, -9.8, 0.0));
+    let update_accel = AccelModifier::new(accel);
+
+    let spawner = SpawnerSettings::once(40.0.into()).with_starts_active(true);
+
+    let effect = EffectAsset::new(8192, spawner, module)
+        .with_name("blood_splash")
+        .init(init_pos)
+        .init(init_vel)
+        .init(init_lifetime)
+        .update(update_accel)
+        .render(ColorOverLifetimeModifier {
+            gradient: color_gradient,
+            ..default()
+        })
+        .render(SizeOverLifetimeModifier {
+            gradient: size_gradient,
+            screen_space_size: false,
+        });
+
+    let handle = effects.add(effect);
+    commands.insert_resource(BloodSplashEffect(handle));
 }

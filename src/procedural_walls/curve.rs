@@ -80,26 +80,27 @@ impl Curve {
     }
 
     pub fn from(points: Vec<Vec3>) -> Self {
-        let length = points
-            .iter()
-            .enumerate()
-            .map(|(idx, p)| {
-                points
-                    .get(idx + 1)
-                    .map(|next_p| (*next_p - *p).length())
-                    .unwrap_or(0.0)
-            })
-            .sum();
-
-        let mut length_traveled = 0.0;
-        let mut points_u = Vec::new();
-
-        for (idx, pt) in points.iter().enumerate() {
-            points_u.push(length_traveled / length);
-            if let Some(next_pt) = points.get(idx + 1) {
-                length_traveled += (*next_pt - *pt).length();
-            }
+        if points.is_empty() {
+            return Self::new();
         }
+
+        let mut cumulative_lengths = Vec::with_capacity(points.len());
+        let mut length = 0.0;
+        cumulative_lengths.push(0.0);
+
+        for segment in points.windows(2) {
+            length += (segment[1] - segment[0]).length();
+            cumulative_lengths.push(length);
+        }
+
+        let points_u = if length > f32::EPSILON {
+            cumulative_lengths
+                .iter()
+                .map(|distance| distance / length)
+                .collect()
+        } else {
+            vec![0.0; points.len()]
+        };
 
         Self {
             points,
@@ -109,33 +110,34 @@ impl Curve {
     }
 
     pub fn smooth(mut self, smoothing_steps: usize) -> Self {
-        if self.points.len() < 3 {
+        if self.points.len() < 3 || smoothing_steps == 0 {
             return self;
         }
 
         for _ in 0..smoothing_steps {
             let mut current_iter_smooth = self.points.clone();
-            for (i, current_pos) in self.points.iter().enumerate() {
-                // skip first point
-                if i == 0 {
-                    continue;
-                }
-
-                if let (Some(prev_pos), Some(next_pos)) =
-                    (self.points.get(i - 1), self.points.get(i + 1))
-                {
-                    let avg: Vec3 = (*prev_pos + *next_pos) / 2.0;
-                    current_iter_smooth[i] = *current_pos + (avg - *current_pos) * 0.5;
-                }
+            for (i, smoothed_point) in current_iter_smooth
+                .iter_mut()
+                .enumerate()
+                .take(self.points.len() - 1)
+                .skip(1)
+            {
+                let current_pos = self.points[i];
+                let avg = (self.points[i - 1] + self.points[i + 1]) * 0.5;
+                *smoothed_point = current_pos + (avg - current_pos) * 0.5;
             }
             self.points = current_iter_smooth;
         }
 
-        self
+        Curve::from(self.points)
     }
 
     /// Resample the curve at uniform arc-length intervals using an O(n+m) two-pointer walk.
     pub fn resample(self, segment_length: f32) -> Self {
+        if self.points.len() < 2 || self.length <= f32::EPSILON || segment_length <= f32::EPSILON {
+            return self;
+        }
+
         if segment_length >= self.length {
             return Curve::from(vec![self.points[0], *self.points.last().unwrap()]);
         }
@@ -198,24 +200,43 @@ impl Curve {
     }
 
     pub fn get_pos_at_u(&self, u: f32) -> Vec3 {
+        if self.points.is_empty() {
+            return Vec3::ZERO;
+        }
+        if self.points.len() == 1 || self.length <= f32::EPSILON {
+            return self.points[0];
+        }
+
         let u = u.clamp(0.0, 1.0);
-
         let (idx1, idx2) = self.get_curve_segment_from_u(u);
-
         let dir = self.points[idx2] - self.points[idx1];
         let u_range = (self.points_u[idx1], self.points_u[idx2]);
+        let u_span = u_range.1 - u_range.0;
 
-        let mag = (u - u_range.0) / (u_range.1 - u_range.0);
+        if u_span.abs() <= f32::EPSILON {
+            return self.points[idx1];
+        }
 
-        self.points[idx1] + dir * mag
+        self.points[idx1] + dir * ((u - u_range.0) / u_span)
     }
 
     pub fn get_tangent_at_u(&self, u: f32) -> Vec3 {
+        if self.points.len() < 2 || self.length <= f32::EPSILON {
+            return Vec3::X;
+        }
+
         let u = u.clamp(0.0, 1.0);
-
         let (idx1, idx2) = self.get_curve_segment_from_u(u);
+        let tangent = (self.points[idx2] - self.points[idx1]).normalize_or_zero();
+        if tangent.length_squared() > f32::EPSILON {
+            return tangent;
+        }
 
-        (self.points[idx2] - self.points[idx1]).normalize()
+        self.points
+            .windows(2)
+            .map(|segment| (segment[1] - segment[0]).normalize_or_zero())
+            .find(|candidate| candidate.length_squared() > f32::EPSILON)
+            .unwrap_or(Vec3::X)
     }
 }
 
@@ -387,5 +408,31 @@ mod tests {
         assert_eq!(resampled.points.len(), 2);
         assert_eq!(resampled.points[0], points[0]);
         assert_eq!(resampled.points[1], points[points.len() - 1]);
+    }
+
+    #[test]
+    fn test_curve_smooth_recomputes_arc_length() {
+        let points = vec![
+            Vec3::new(0.0, 0.0, 0.0),
+            Vec3::new(1.0, 1.0, 0.0),
+            Vec3::new(2.0, 0.0, 0.0),
+        ];
+        let original = Curve::from(points);
+        let smoothed = original.clone().smooth(1);
+
+        assert!(smoothed.length < original.length);
+        assert_eq!(smoothed.points_u[0], 0.0);
+        assert_eq!(smoothed.points_u[smoothed.points_u.len() - 1], 1.0);
+    }
+
+    #[test]
+    fn test_curve_handles_zero_length_points() {
+        let point = Vec3::new(1.0, 2.0, 3.0);
+        let curve = Curve::from(vec![point, point, point]);
+
+        assert_eq!(curve.length, 0.0);
+        assert_eq!(curve.get_pos_at_u(0.5), point);
+        assert_eq!(curve.get_tangent_at_u(0.5), Vec3::X);
+        assert_eq!(curve.resample(1.0).points.len(), 3);
     }
 }

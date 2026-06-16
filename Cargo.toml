@@ -28,7 +28,7 @@ bevy_egui = "0.39.1"
 bevy-inspector-egui = "0.36.0"
 
 # Particle Effects (Modern GPU system for Bevy 0.18)
-bevy_hanabi = "0.18"
+bevy_hanabi = { version = "0.18", features = [ "3d" ]}
 
 # Terrain Noise
 bracket-noise = "0.8"
@@ -53,6 +53,7 @@ panic = "abort"
 debug-assertions = false
 debug = false
 overflow-checks = false
+strip = "symbols"
 rpath = false
 
 [profile.dev]

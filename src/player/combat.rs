@@ -4,6 +4,7 @@ use crate::ui::UiState;
 use crate::voxel::BlockType;
 use crate::world::noise_generator::NoiseGenerator;
 use crate::world::tree_generator::TreeEntity;
+use bevy::math::primitives::Capsule3d;
 use bevy::prelude::*;
 use bevy_voxel_world::prelude::*;
 
@@ -30,6 +31,7 @@ impl Plugin for CombatPlugin {
         app.add_systems(
             Update,
             (
+                despawn_muzzle_flash_system,
                 weapon_select,
                 fire_bow,
                 melee_attack,
@@ -41,6 +43,7 @@ impl Plugin for CombatPlugin {
                 update_weapon_visibilities,
                 projectile_update,
                 health_death,
+                dying_update,
                 update_laser_heat,
             ),
         );
@@ -122,8 +125,8 @@ impl Default for AmmoState {
         Self {
             pistol_ammo: 12,
             revolver_ammo: 6,
-            rifle_ammo: 30,
-            sniper_ammo: 5,
+            rifle_ammo: 45,
+            sniper_ammo: 9,
             reload_timer: 0.0,
             reloading_weapon: None,
         }
@@ -190,6 +193,15 @@ pub struct Projectile {
     pub velocity: Vec3,
     pub damage: f32,
     pub lifetime: Timer,
+    pub gravity_scale: f32,
+}
+
+/// Represents an entity currently undergoing a death animation (falling over, bleeding)
+#[derive(Component)]
+pub struct Dying {
+    pub timer: Timer,
+    pub original_rotation: Quat,
+    pub fall_rotation: Quat,
 }
 
 /// Marker for entities that can be hit by projectiles
@@ -199,6 +211,23 @@ pub struct Hittable;
 /// Pending damage marker
 #[derive(Component)]
 pub struct DamageEvent(pub f32);
+
+#[derive(Component)]
+pub struct TempMuzzleFlash(pub Timer);
+
+// Add this system to your App (in Update schedule)
+pub fn despawn_muzzle_flash_system(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut query: Query<(Entity, &mut TempMuzzleFlash)>,
+) {
+    for (entity, mut timer) in &mut query {
+        timer.0.tick(time.delta());
+        if timer.0.is_finished() {
+            commands.entity(entity).despawn();
+        }
+    }
+}
 
 /// Weapon selection system
 fn weapon_select(
@@ -434,6 +463,7 @@ fn fire_bow(
                 velocity,
                 damage: 5.0,
                 lifetime: Timer::from_seconds(5.0, TimerMode::Once),
+                gravity_scale: 1.0,
             },
         ));
     }
@@ -453,7 +483,7 @@ fn projectile_update(
             continue;
         }
 
-        projectile.velocity.y -= 9.8 * dt;
+        projectile.velocity.y -= 9.8 * projectile.gravity_scale * dt;
         arrow_transform.translation += projectile.velocity * dt;
 
         for (target_entity, target_transform, _) in hittable_query.iter() {
@@ -484,6 +514,7 @@ fn health_death(
         Option<&TreeEntity>,
     )>,
     mut inventory: ResMut<Inventory>,
+    blood_splash: Option<Res<crate::particle_effects::BloodSplashEffect>>,
 ) {
     for (entity, mut health, damage, is_player, mut opt_transform, is_tree) in query.iter_mut() {
         health.hp -= damage.0;
@@ -504,9 +535,64 @@ fn health_death(
                         "Tree chopped down! Gained 5 Wood. (Total: {})",
                         inventory.resources[&BlockType::Wood]
                     );
+                    commands.entity(entity).despawn();
+                } else if let Some(ref mut transform) = opt_transform {
+                    // Spawn a blood splash particle effect!
+                    if let Some(ref effect) = blood_splash {
+                        commands.spawn((
+                            bevy_hanabi::ParticleEffect {
+                                handle: effect.0.clone(),
+                                ..default()
+                            },
+                            Transform::from_translation(
+                                transform.translation + Vec3::new(0.0, 0.5, 0.0),
+                            ),
+                        ));
+                    }
+
+                    // Setup Dying component with timer and original/fall rotations
+                    let original_rotation = transform.rotation;
+                    let fall_rotation =
+                        original_rotation * Quat::from_rotation_z(std::f32::consts::FRAC_PI_2);
+
+                    let mut cmd = commands.entity(entity);
+                    cmd.remove::<Hittable>();
+                    cmd.remove::<Health>();
+                    cmd.remove::<crate::entities::animals::Animal>();
+                    cmd.remove::<crate::entities::Creature>();
+                    cmd.remove::<crate::entities::npc::NPC>();
+
+                    cmd.insert(Dying {
+                        timer: Timer::from_seconds(1.5, TimerMode::Once),
+                        original_rotation,
+                        fall_rotation,
+                    });
+                } else {
+                    commands.entity(entity).despawn();
                 }
-                commands.entity(entity).despawn();
             }
+        }
+    }
+}
+
+fn dying_update(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut query: Query<(Entity, &mut Transform, &mut Dying)>,
+) {
+    let dt = time.delta_secs();
+    for (entity, mut transform, mut dying) in query.iter_mut() {
+        dying.timer.tick(time.delta());
+        let t = dying.timer.fraction();
+
+        // Slerp rotation to fall_rotation (sideways onto the ground)
+        transform.rotation = dying.original_rotation.slerp(dying.fall_rotation, t);
+
+        // Sink slightly into the ground as they fall over so they look grounded
+        transform.translation.y -= 0.4 * dt;
+
+        if dying.timer.just_finished() {
+            commands.entity(entity).despawn();
         }
     }
 }
@@ -1110,8 +1196,8 @@ fn fire_guns(
                 match wp {
                     WeaponState::Pistol => ammo.pistol_ammo = 12,
                     WeaponState::Revolver => ammo.revolver_ammo = 6,
-                    WeaponState::Rifle => ammo.rifle_ammo = 30,
-                    WeaponState::Sniper => ammo.sniper_ammo = 5,
+                    WeaponState::Rifle => ammo.rifle_ammo = 45,
+                    WeaponState::Sniper => ammo.sniper_ammo = 9,
                     _ => {}
                 }
             }
@@ -1141,8 +1227,8 @@ fn fire_guns(
         let max_ammo = match current_weapon {
             WeaponState::Pistol => 12,
             WeaponState::Revolver => 6,
-            WeaponState::Rifle => 30,
-            WeaponState::Sniper => 5,
+            WeaponState::Rifle => 45,
+            WeaponState::Sniper => 9,
             _ => 0,
         };
         let current_ammo = match current_weapon {
@@ -1247,77 +1333,92 @@ fn fire_guns(
     // Play gunshot sound effect
     commands.spawn((AudioPlayer::new(shoot_sound), PlaybackSettings::DESPAWN));
 
-    // Spawn projectile bullet tracer
-    if let Ok(player_transform) = player_query.single()
+    // Spawn projectile bullet + muzzle flash
+    if let Ok(_player_transform) = player_query.single()
         && let Ok(camera_transform) = camera_query.single()
     {
         let camera_pos = camera_transform.translation();
         let camera_forward = camera_transform.forward();
         let right = camera_transform.right();
+        let up = camera_transform.up();
 
-        let hand_offset = Vec3::from(right) * 0.3
-            + Vec3::from(camera_transform.down()) * 0.2
-            + Vec3::from(camera_forward) * 0.8;
-        let spawn_pos = player_transform.translation + Vec3::new(0.0, 1.5, 0.0) + hand_offset;
+        // ==================== WEAPON-SPECIFIC CONFIG ====================
+        let (velocity_scalar, damage, lifetime, bullet_mesh, bullet_material, muzzle_intensity) =
+            match current_weapon {
+                WeaponState::Pistol => (
+                    130.0,
+                    15.0,
+                    2.5,
+                    meshes.add(Capsule3d::new(0.012, 0.09)),
+                    materials.add(StandardMaterial {
+                        base_color: Color::srgb(0.95, 0.95, 0.98),
+                        metallic: 0.85,
+                        reflectance: 0.7,
+                        emissive: LinearRgba::from(Color::srgb(6.0, 5.0, 2.0)),
+                        ..default()
+                    }),
+                    12.0,
+                ),
+                WeaponState::Revolver => (
+                    125.0,
+                    28.0,
+                    2.8,
+                    meshes.add(Capsule3d::new(0.018, 0.11)),
+                    materials.add(StandardMaterial {
+                        base_color: Color::srgb(0.9, 0.85, 0.7),
+                        metallic: 0.9,
+                        emissive: LinearRgba::from(Color::srgb(10.0, 7.0, 2.0)),
+                        ..default()
+                    }),
+                    18.0,
+                ),
+                WeaponState::Rifle => (
+                    160.0,
+                    22.0,
+                    3.5,
+                    meshes.add(Capsule3d::new(0.014, 0.14)),
+                    materials.add(StandardMaterial {
+                        base_color: Color::srgb(0.85, 0.85, 0.9),
+                        metallic: 0.8,
+                        emissive: LinearRgba::from(Color::srgb(8.0, 6.0, 1.5)),
+                        ..default()
+                    }),
+                    15.0,
+                ),
+                WeaponState::Sniper => (
+                    220.0,
+                    95.0,
+                    5.0,
+                    meshes.add(Capsule3d::new(0.016, 0.22)),
+                    materials.add(StandardMaterial {
+                        base_color: Color::srgb(0.92, 0.92, 0.95),
+                        metallic: 0.95,
+                        emissive: LinearRgba::from(Color::srgb(15.0, 10.0, 3.0)),
+                        ..default()
+                    }),
+                    25.0,
+                ),
+                _ => unreachable!(),
+            };
 
-        // Raycast aiming
+        // ==================== SPAWN POSITION (Barrel) ====================
+        let barrel_offset = right * 0.28 + up * 0.18 + camera_forward * 0.65;
+        let spawn_pos = camera_pos + barrel_offset;
+
+        // Raycast for accurate aiming
         let ray = Ray3d::new(camera_pos, camera_forward);
         let target_point = if let Some(hit) =
             voxel_world.raycast(ray, &|(_, v): (Vec3, WorldVoxel)| v.is_solid())
         {
             hit.position
         } else {
-            camera_pos + Vec3::from(camera_forward) * 100.0
+            camera_pos + camera_forward * 200.0
         };
 
         let shoot_dir = (target_point - spawn_pos).normalize_or_zero();
-
-        let (velocity_scalar, damage, bullet_mesh, bullet_material) = match current_weapon {
-            WeaponState::Pistol => (
-                100.0,
-                15.0,
-                meshes.add(Cuboid::new(0.02, 0.02, 0.15)),
-                materials.add(StandardMaterial {
-                    base_color: Color::srgb(1.0, 0.9, 0.3),
-                    emissive: LinearRgba::from(Color::srgb(1.5, 1.3, 0.4)),
-                    ..default()
-                }),
-            ),
-            WeaponState::Revolver => (
-                110.0,
-                25.0,
-                meshes.add(Cuboid::new(0.025, 0.025, 0.18)),
-                materials.add(StandardMaterial {
-                    base_color: Color::srgb(1.0, 0.85, 0.2),
-                    emissive: LinearRgba::from(Color::srgb(1.8, 1.5, 0.3)),
-                    ..default()
-                }),
-            ),
-            WeaponState::Rifle => (
-                120.0,
-                20.0,
-                meshes.add(Cuboid::new(0.02, 0.02, 0.22)),
-                materials.add(StandardMaterial {
-                    base_color: Color::srgb(1.0, 0.7, 0.1),
-                    emissive: LinearRgba::from(Color::srgb(2.0, 1.4, 0.2)),
-                    ..default()
-                }),
-            ),
-            WeaponState::Sniper => (
-                180.0,
-                100.0,
-                meshes.add(Cuboid::new(0.03, 0.03, 0.35)),
-                materials.add(StandardMaterial {
-                    base_color: Color::srgb(1.0, 0.5, 0.0),
-                    emissive: LinearRgba::from(Color::srgb(3.0, 1.5, 0.0)),
-                    ..default()
-                }),
-            ),
-            _ => unreachable!(),
-        };
-
         let velocity = shoot_dir * velocity_scalar;
 
+        // Spawn Bullet
         commands.spawn((
             Mesh3d(bullet_mesh),
             MeshMaterial3d(bullet_material),
@@ -1325,8 +1426,21 @@ fn fire_guns(
             Projectile {
                 velocity,
                 damage,
-                lifetime: Timer::from_seconds(3.0, TimerMode::Once),
+                lifetime: Timer::from_seconds(lifetime, TimerMode::Once),
+                gravity_scale: 0.05,
             },
+        ));
+
+        // ==================== MUZZLE FLASH ====================
+        commands.spawn((
+            PointLight {
+                color: Color::srgb(1.0, 0.7, 0.3),
+                intensity: muzzle_intensity * 80000.0,
+                radius: 0.5,
+                ..default()
+            },
+            Transform::from_translation(spawn_pos + camera_forward * 0.3),
+            TempMuzzleFlash(Timer::from_seconds(0.08, TimerMode::Once)),
         ));
     }
 }
