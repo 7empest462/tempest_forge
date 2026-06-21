@@ -1,3 +1,4 @@
+use crate::player::combat::{RecoilState, WeaponState};
 use crate::ui::UiState;
 use crate::world::manager::find_ground_height;
 use crate::world::noise_generator::NoiseGenerator;
@@ -320,31 +321,39 @@ fn setup_player(
                                 side: -1.0,
                                 animation_timer: 0.0,
                             },
-                            Mesh3d(arm_mesh_l.clone()),
-                            MeshMaterial3d(character_mat.clone()),
-                            Transform::from_xyz(-0.28, -0.55, -0.1),
+                            Transform::from_xyz(-0.28, -0.1875, -0.1),
                             Visibility::default(),
                             InheritedVisibility::default(),
                         ))
-                        .with_children(|arm| {
-                            for (pos, size, ci) in &shoulder_l {
-                                arm.spawn((
-                                    MechVisual,
-                                    Mesh3d(meshes.add(Cuboid::new(size.x, size.y, size.z))),
-                                    MeshMaterial3d(mech_materials[*ci].clone()),
-                                    Transform::from_translation(*pos),
-                                    Visibility::Hidden,
-                                ));
-                            }
-                            for (pos, size, ci) in &gauntlet_parts {
-                                arm.spawn((
-                                    MechVisual,
-                                    Mesh3d(meshes.add(Cuboid::new(size.x, size.y, size.z))),
-                                    MeshMaterial3d(mech_materials[*ci].clone()),
-                                    Transform::from_translation(*pos),
-                                    Visibility::Hidden,
-                                ));
-                            }
+                        .with_children(|pivot| {
+                            pivot
+                                .spawn((
+                                    Mesh3d(arm_mesh_l.clone()),
+                                    MeshMaterial3d(character_mat.clone()),
+                                    Transform::from_xyz(0.0, -0.3625, 0.0),
+                                    Visibility::default(),
+                                    InheritedVisibility::default(),
+                                ))
+                                .with_children(|arm| {
+                                    for (pos, size, ci) in &shoulder_l {
+                                        arm.spawn((
+                                            MechVisual,
+                                            Mesh3d(meshes.add(Cuboid::new(size.x, size.y, size.z))),
+                                            MeshMaterial3d(mech_materials[*ci].clone()),
+                                            Transform::from_translation(*pos),
+                                            Visibility::Hidden,
+                                        ));
+                                    }
+                                    for (pos, size, ci) in &gauntlet_parts {
+                                        arm.spawn((
+                                            MechVisual,
+                                            Mesh3d(meshes.add(Cuboid::new(size.x, size.y, size.z))),
+                                            MeshMaterial3d(mech_materials[*ci].clone()),
+                                            Transform::from_translation(*pos),
+                                            Visibility::Hidden,
+                                        ));
+                                    }
+                                });
                         });
 
                     upper
@@ -353,63 +362,72 @@ fn setup_player(
                                 side: 1.0,
                                 animation_timer: 0.0,
                             },
-                            Mesh3d(arm_mesh_r.clone()),
-                            MeshMaterial3d(character_mat.clone()),
-                            Transform::from_xyz(0.28, -0.55, -0.1),
+                            Transform::from_xyz(0.28, -0.1875, -0.1),
                             Visibility::default(),
                             InheritedVisibility::default(),
                         ))
-                        .with_children(|arm| {
-                            for (pos, size, ci) in &shoulder_r {
-                                arm.spawn((
-                                    MechVisual,
-                                    Mesh3d(meshes.add(Cuboid::new(size.x, size.y, size.z))),
-                                    MeshMaterial3d(mech_materials[*ci].clone()),
-                                    Transform::from_translation(*pos),
-                                    Visibility::Hidden,
-                                ));
-                            }
-                            for (pos, size, ci) in &gauntlet_parts {
-                                arm.spawn((
-                                    MechVisual,
-                                    Mesh3d(meshes.add(Cuboid::new(size.x, size.y, size.z))),
-                                    MeshMaterial3d(mech_materials[*ci].clone()),
-                                    Transform::from_translation(*pos),
-                                    Visibility::Hidden,
-                                ));
-                            }
-                            arm.spawn((
-                                MechVisual,
-                                MechDrill,
-                                Mesh3d(meshes.add(Cone {
-                                    radius: 0.15,
-                                    height: 0.6,
-                                })),
-                                MeshMaterial3d(drill_mat.clone()),
-                                Transform::from_xyz(0.0, -0.7, 0.0)
-                                    .with_rotation(Quat::from_rotation_x(std::f32::consts::PI)),
-                                Visibility::Hidden,
-                            ));
-                            arm.spawn((
-                                MechAxe,
-                                MechVisual,
-                                Mesh3d(meshes.add(Cuboid::new(0.5, 0.3, 0.1))),
-                                MeshMaterial3d(axe_mat.clone()),
-                                Transform::from_xyz(0.2, -1.0, 0.0),
-                                Visibility::Hidden,
-                            ));
-                            arm.spawn((
-                                MechVisual,
-                                MechLaser,
-                                Mesh3d(meshes.add(Cuboid::new(0.15, 0.4, 0.15))),
-                                MeshMaterial3d(materials.add(StandardMaterial {
-                                    base_color: Color::srgb(0.0, 1.0, 1.0),
-                                    emissive: LinearRgba::from(Color::srgb(0.0, 2.0, 2.0)),
-                                    ..default()
-                                })),
-                                Transform::from_xyz(0.0, -1.0, 0.0),
-                                Visibility::Hidden,
-                            ));
+                        .with_children(|pivot| {
+                            pivot
+                                .spawn((
+                                    Mesh3d(arm_mesh_r.clone()),
+                                    MeshMaterial3d(character_mat.clone()),
+                                    Transform::from_xyz(0.0, -0.3625, 0.0),
+                                    Visibility::default(),
+                                    InheritedVisibility::default(),
+                                ))
+                                .with_children(|arm| {
+                                    for (pos, size, ci) in &shoulder_r {
+                                        arm.spawn((
+                                            MechVisual,
+                                            Mesh3d(meshes.add(Cuboid::new(size.x, size.y, size.z))),
+                                            MeshMaterial3d(mech_materials[*ci].clone()),
+                                            Transform::from_translation(*pos),
+                                            Visibility::Hidden,
+                                        ));
+                                    }
+                                    for (pos, size, ci) in &gauntlet_parts {
+                                        arm.spawn((
+                                            MechVisual,
+                                            Mesh3d(meshes.add(Cuboid::new(size.x, size.y, size.z))),
+                                            MeshMaterial3d(mech_materials[*ci].clone()),
+                                            Transform::from_translation(*pos),
+                                            Visibility::Hidden,
+                                        ));
+                                    }
+                                    arm.spawn((
+                                        MechVisual,
+                                        MechDrill,
+                                        Mesh3d(meshes.add(Cone {
+                                            radius: 0.15,
+                                            height: 0.6,
+                                        })),
+                                        MeshMaterial3d(drill_mat.clone()),
+                                        Transform::from_xyz(0.0, -0.7, 0.0).with_rotation(
+                                            Quat::from_rotation_x(std::f32::consts::PI),
+                                        ),
+                                        Visibility::Hidden,
+                                    ));
+                                    arm.spawn((
+                                        MechAxe,
+                                        MechVisual,
+                                        Mesh3d(meshes.add(Cuboid::new(0.5, 0.3, 0.1))),
+                                        MeshMaterial3d(axe_mat.clone()),
+                                        Transform::from_xyz(0.2, -1.0, 0.0),
+                                        Visibility::Hidden,
+                                    ));
+                                    arm.spawn((
+                                        MechVisual,
+                                        MechLaser,
+                                        Mesh3d(meshes.add(Cuboid::new(0.15, 0.4, 0.15))),
+                                        MeshMaterial3d(materials.add(StandardMaterial {
+                                            base_color: Color::srgb(0.0, 1.0, 1.0),
+                                            emissive: LinearRgba::from(Color::srgb(0.0, 2.0, 2.0)),
+                                            ..default()
+                                        })),
+                                        Transform::from_xyz(0.0, -1.0, 0.0),
+                                        Visibility::Hidden,
+                                    ));
+                                });
                         });
                 });
 
@@ -1069,6 +1087,19 @@ fn player_animation(
     >,
     mouse_input: Res<ButtonInput<MouseButton>>,
     ui_state: Res<UiState>,
+    weapon: Res<WeaponState>,
+    pivot_query: Query<
+        &Transform,
+        (
+            With<CameraPivot>,
+            Without<Player>,
+            Without<PlayerArm>,
+            Without<PlayerLeg>,
+            Without<MechDrill>,
+        ),
+    >,
+    gamepads: Query<&Gamepad>,
+    recoil: Res<RecoilState>,
 ) {
     if ui_state.show_inventory || ui_state.show_pause_menu {
         return;
@@ -1080,6 +1111,13 @@ fn player_animation(
 
     let horizontal_speed = physics.horizontal_velocity.length();
     let is_moving = horizontal_speed > 0.1 && physics.grounded;
+
+    let pivot_pitch = if let Ok(pivot_transform) = pivot_query.single() {
+        let (_, pitch, _) = pivot_transform.rotation.to_euler(EulerRot::YXZ);
+        pitch
+    } else {
+        0.0
+    };
 
     for (mut transform, leg) in leg_query.iter_mut() {
         if physics.swimming {
@@ -1127,7 +1165,24 @@ fn player_animation(
     let is_mining = mouse_input.pressed(MouseButton::Left);
 
     for (mut transform, mut arm) in arm_query.iter_mut() {
-        if mouse_input.just_pressed(MouseButton::Left) && arm.side > 0.0 {
+        let is_melee_swing = matches!(
+            *weapon,
+            WeaponState::NoWeapon | WeaponState::Pickaxe | WeaponState::Axe | WeaponState::Sword
+        );
+
+        let just_swung = if is_melee_swing {
+            let mut swung = mouse_input.just_pressed(MouseButton::Left);
+            for gamepad in gamepads.iter() {
+                if gamepad.just_pressed(GamepadButton::RightTrigger2) {
+                    swung = true;
+                }
+            }
+            swung
+        } else {
+            false
+        };
+
+        if just_swung && arm.side > 0.0 {
             arm.animation_timer = 0.3;
         }
 
@@ -1139,51 +1194,63 @@ fn player_animation(
 
             let scale_pulse = 1.0 + (progress * std::f32::consts::PI).sin() * 0.2;
             transform.scale = Vec3::new(1.0, scale_pulse, 1.0);
-        } else if physics.swimming {
-            // Swimming / Breaststroke stroke motion
-            if horizontal_speed > 0.1 {
-                let stroke_speed = 8.0;
-                let forward_sweep = (t * stroke_speed).cos() * 0.6 - 0.2;
-                let outward_sweep = (t * stroke_speed).sin() * 0.8 * arm.side;
-                transform.rotation =
-                    Quat::from_euler(EulerRot::YXZ, outward_sweep, forward_sweep, 0.0);
-            } else {
-                // Treading water
-                let sway_speed = 4.0;
-                let angle = (t * sway_speed).sin() * 0.2 * arm.side;
-                transform.rotation = Quat::from_euler(EulerRot::YXZ, angle, 0.0, 0.2 * arm.side);
-            }
-            transform.scale = Vec3::ONE;
-        } else if physics.flying {
-            // Flight stabilizer pose (Iron Man flight balancing!)
-            let pitch = 0.35; // Pushed slightly back
-            let yaw = arm.side * 0.22; // Spread outwards for flight stabilization
-            let vibration = (t * 30.0
-                + (if arm.side > 0.0 {
-                    std::f32::consts::PI
-                } else {
-                    0.0
-                }))
-            .sin()
-                * 0.02; // Thruster sizzle
-            transform.rotation =
-                Quat::from_euler(EulerRot::YXZ, yaw, pitch + vibration, arm.side * -0.15);
-            transform.scale = Vec3::ONE;
-        } else if is_moving {
-            let sway_speed = 10.0;
-            let angle = (t * sway_speed
-                + (if arm.side > 0.0 {
-                    std::f32::consts::PI
-                } else {
-                    0.0
-                }))
-            .sin()
-                * 0.3;
-            transform.rotation = Quat::from_rotation_x(angle);
-            transform.scale = Vec3::ONE;
         } else {
-            transform.rotation = Quat::IDENTITY;
-            transform.scale = Vec3::ONE;
+            // Aiming Stances based on WeaponState
+            match *weapon {
+                WeaponState::Pistol | WeaponState::Revolver | WeaponState::Laser => {
+                    if arm.side > 0.0 {
+                        // Right arm aims handgun forward (slightly lowered to aim straight out, tilted up with recoil)
+                        transform.rotation =
+                            Quat::from_rotation_x(1.35 + pivot_pitch + recoil.current * 0.35);
+                    } else {
+                        // Left arm relaxed at side
+                        apply_default_arm_motion(
+                            transform.as_mut(),
+                            arm.side,
+                            physics,
+                            is_moving,
+                            t,
+                        );
+                    }
+                    transform.scale = Vec3::ONE;
+                }
+                WeaponState::Rifle | WeaponState::Sniper => {
+                    if arm.side > 0.0 {
+                        // Right arm holds stock (slightly lowered to aim straight out, tilted up with recoil)
+                        transform.rotation = Quat::from_euler(
+                            EulerRot::YXZ,
+                            -0.15,
+                            1.35 + pivot_pitch + recoil.current * 0.25,
+                            0.0,
+                        );
+                    } else {
+                        // Left arm reaches across body to hold foregrip (tilted up with recoil)
+                        transform.rotation = Quat::from_euler(
+                            EulerRot::YXZ,
+                            -0.5,
+                            1.25 + pivot_pitch + recoil.current * 0.25,
+                            0.2,
+                        );
+                    }
+                    transform.scale = Vec3::ONE;
+                }
+                WeaponState::Bow => {
+                    if arm.side > 0.0 {
+                        // Right arm draws string
+                        transform.rotation =
+                            Quat::from_euler(EulerRot::YXZ, 0.4, 0.1 + pivot_pitch, 0.2);
+                    } else {
+                        // Left arm holds bow
+                        transform.rotation =
+                            Quat::from_euler(EulerRot::YXZ, -0.2, 1.45 + pivot_pitch, -0.1);
+                    }
+                    transform.scale = Vec3::ONE;
+                }
+                _ => {
+                    // Default walking/flying/swimming animations
+                    apply_default_arm_motion(transform.as_mut(), arm.side, physics, is_moving, t);
+                }
+            }
         }
     }
 
@@ -1191,6 +1258,56 @@ fn player_animation(
         for mut transform in drill_query.iter_mut() {
             transform.rotate_y(20.0 * time.delta_secs());
         }
+    }
+}
+
+fn apply_default_arm_motion(
+    transform: &mut Transform,
+    side: f32,
+    physics: &PhysicsState,
+    is_moving: bool,
+    t: f32,
+) {
+    if physics.swimming {
+        if physics.horizontal_velocity.length() > 0.1 {
+            let stroke_speed = 8.0;
+            let forward_sweep = (t * stroke_speed).cos() * 0.6 - 0.2;
+            let outward_sweep = (t * stroke_speed).sin() * 0.8 * side;
+            transform.rotation = Quat::from_euler(EulerRot::YXZ, outward_sweep, forward_sweep, 0.0);
+        } else {
+            let sway_speed = 4.0;
+            let angle = (t * sway_speed).sin() * 0.2 * side;
+            transform.rotation = Quat::from_euler(EulerRot::YXZ, angle, 0.0, 0.2 * side);
+        }
+        transform.scale = Vec3::ONE;
+    } else if physics.flying {
+        let pitch = 0.35;
+        let yaw = side * 0.22;
+        let vibration = (t * 30.0
+            + (if side > 0.0 {
+                std::f32::consts::PI
+            } else {
+                0.0
+            }))
+        .sin()
+            * 0.02;
+        transform.rotation = Quat::from_euler(EulerRot::YXZ, yaw, pitch + vibration, side * -0.15);
+        transform.scale = Vec3::ONE;
+    } else if is_moving {
+        let sway_speed = 10.0;
+        let angle = (t * sway_speed
+            + (if side > 0.0 {
+                std::f32::consts::PI
+            } else {
+                0.0
+            }))
+        .sin()
+            * 0.3;
+        transform.rotation = Quat::from_rotation_x(angle);
+        transform.scale = Vec3::ONE;
+    } else {
+        transform.rotation = Quat::IDENTITY;
+        transform.scale = Vec3::ONE;
     }
 }
 

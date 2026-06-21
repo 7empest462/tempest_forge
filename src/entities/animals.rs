@@ -94,9 +94,10 @@ fn spawn_animals(
 
         let spawn_pos = Vec3::new(spawn_x, spawn_y, spawn_z);
 
-        let is_night = time_of_day.hour < 5.0 || time_of_day.hour > 20.0;
+        let is_day = time_of_day.hour > 6.0 && time_of_day.hour < 19.0;
+        let is_night = !is_day;
 
-        let (species, color, speed, size, detection, hp) = if spawn_y < player_pos.y - 10.0 {
+        let (species, color, speed, size, detection, hp) = if spawn_y <= 12.0 {
             // Underground Monster Spawning
             match rng.random_range(0..3) {
                 0 => (
@@ -117,11 +118,10 @@ fn spawn_animals(
                     20.0,
                 ),
             }
-        } else {
-            // Surface Spawning
-            let roll = rng.random_range(0..10);
-            match roll {
-                0..=2 if is_night => (
+        } else if is_night {
+            // Surface Spawning at Night (Only monsters / night creatures)
+            match rng.random_range(0..5) {
+                0 => (
                     Species::Wolf,
                     Color::srgb(0.3, 0.3, 0.3),
                     1.2,
@@ -129,7 +129,7 @@ fn spawn_animals(
                     20.0,
                     20.0,
                 ),
-                3 if is_night => (
+                1 => (
                     Species::Spider,
                     Color::srgb(0.2, 0.0, 0.0),
                     1.4,
@@ -137,7 +137,7 @@ fn spawn_animals(
                     25.0,
                     15.0,
                 ),
-                4 if is_night => (
+                2 => (
                     Species::Skeleton,
                     Color::srgb(0.8, 0.8, 0.8),
                     0.9,
@@ -145,17 +145,21 @@ fn spawn_animals(
                     30.0,
                     20.0,
                 ),
-                5 if is_night => (Species::Cyclops, Color::WHITE, 0.5, 3.0, 35.0, 50.0),
-                6 if is_night => (Species::Triangaroo, Color::WHITE, 0.4, 3.2, 30.0, 40.0),
-                0..=2 => (
+                3 => (Species::Cyclops, Color::WHITE, 0.5, 3.0, 35.0, 50.0),
+                _ => (Species::Triangaroo, Color::WHITE, 0.4, 3.2, 30.0, 40.0),
+            }
+        } else {
+            // Surface Spawning during Day (Only passive / day creatures)
+            match rng.random_range(0..6) {
+                0 => (
                     Species::Deer,
                     Color::srgb(0.6, 0.4, 0.2),
                     1.5,
                     0.8,
                     15.0,
                     12.0,
-                ), // Replace wolf with deer in day
-                3 => (
+                ),
+                1 => (
                     Species::Cow,
                     Color::srgb(0.9, 0.9, 0.9),
                     0.8,
@@ -163,7 +167,7 @@ fn spawn_animals(
                     5.0,
                     15.0,
                 ),
-                4 => (
+                2 => (
                     Species::Pig,
                     Color::srgb(1.0, 0.7, 0.7),
                     1.0,
@@ -171,7 +175,7 @@ fn spawn_animals(
                     10.0,
                     10.0,
                 ),
-                5 => (
+                3 => (
                     Species::Chicken,
                     Color::srgb(1.0, 1.0, 1.0),
                     0.5,
@@ -179,7 +183,7 @@ fn spawn_animals(
                     15.0,
                     5.0,
                 ),
-                6 => (
+                4 => (
                     Species::Deer,
                     Color::srgb(0.6, 0.4, 0.2),
                     1.5,
@@ -187,21 +191,13 @@ fn spawn_animals(
                     15.0,
                     12.0,
                 ),
-                7 => (
+                _ => (
                     Species::Cow,
                     Color::srgb(0.9, 0.9, 0.9),
                     0.8,
                     1.0,
                     5.0,
                     15.0,
-                ),
-                _ => (
-                    Species::Deer,
-                    Color::srgb(0.6, 0.4, 0.2),
-                    1.5,
-                    0.8,
-                    15.0,
-                    12.0,
                 ),
             }
         };
@@ -234,12 +230,14 @@ fn spawn_animals(
                     parent.spawn((
                         SceneRoot(asset_server.load("059_Triangaroo_Art.glb#Scene0")),
                         Transform::from_translation(Vec3::new(0.0, -size * 0.5, 0.0))
+                            .with_rotation(Quat::from_rotation_y(std::f32::consts::PI))
                             .with_scale(Vec3::splat(size)),
                     ));
                 } else if species == Species::Cyclops {
                     parent.spawn((
                         SceneRoot(asset_server.load("060_Polypug_Art.glb#Scene0")),
                         Transform::from_translation(Vec3::new(0.0, -size * 0.5, 0.0))
+                            .with_rotation(Quat::from_rotation_y(std::f32::consts::PI))
                             .with_scale(Vec3::splat(size)),
                     ));
                 } else if species == Species::Skeleton {
@@ -288,9 +286,32 @@ fn spawn_animals(
                     }
                 } else {
                     // Quadruped Animal Model
+                    let mut body_shape = Cuboid::new(size * 0.7, size * 0.6, size * 1.0);
+                    let mut head_shape = Cuboid::from_size(Vec3::splat(size * 0.4));
+                    let mut head_pos = Vec3::new(0.0, size * 0.3, -size * 0.6);
+                    let mut leg_shape = Cuboid::new(size * 0.1, size * 0.5, size * 0.1);
+                    let mut leg_y = -size * 0.4;
+                    let mut leg_x_offset = size;
+
+                    if species == Species::Deer {
+                        body_shape = Cuboid::new(size * 0.5, size * 0.5, size * 1.1);
+                        head_shape =
+                            Cuboid::from_size(Vec3::new(size * 0.3, size * 0.35, size * 0.3));
+                        head_pos = Vec3::new(0.0, size * 0.4, -size * 0.65);
+                        leg_shape = Cuboid::new(size * 0.07, size * 0.7, size * 0.07);
+                        leg_y = -size * 0.5;
+                        leg_x_offset = size * 0.75;
+                    } else if species == Species::Pig {
+                        body_shape = Cuboid::new(size * 0.8, size * 0.6, size * 0.9);
+                        head_shape = Cuboid::from_size(Vec3::splat(size * 0.45));
+                        head_pos = Vec3::new(0.0, size * 0.1, -size * 0.55);
+                        leg_shape = Cuboid::new(size * 0.12, size * 0.35, size * 0.12);
+                        leg_y = -size * 0.35;
+                    }
+
                     // 1. Body
                     parent.spawn((
-                        Mesh3d(meshes.add(Cuboid::new(size * 0.7, size * 0.6, size * 1.0))),
+                        Mesh3d(meshes.add(body_shape)),
                         MeshMaterial3d(materials.add(StandardMaterial {
                             base_color: color,
                             ..default()
@@ -300,15 +321,64 @@ fn spawn_animals(
 
                     // 2. Head
                     parent.spawn((
-                        Mesh3d(meshes.add(Cuboid::from_size(Vec3::splat(size * 0.4)))),
+                        Mesh3d(meshes.add(head_shape)),
                         MeshMaterial3d(materials.add(StandardMaterial {
                             base_color: color,
                             ..default()
                         })),
-                        Transform::from_translation(Vec3::new(0.0, size * 0.3, -size * 0.6)),
+                        Transform::from_translation(head_pos),
                     ));
 
-                    // 3. Legs
+                    // 3. Antlers (Deer only)
+                    if species == Species::Deer {
+                        let antler_mat = materials.add(StandardMaterial {
+                            base_color: Color::srgb(0.85, 0.8, 0.75), // Bone/antler color
+                            perceptual_roughness: 0.9,
+                            ..default()
+                        });
+                        // Left Antler Base
+                        parent.spawn((
+                            Mesh3d(meshes.add(Cuboid::new(size * 0.05, size * 0.35, size * 0.05))),
+                            MeshMaterial3d(antler_mat.clone()),
+                            Transform::from_translation(Vec3::new(
+                                -size * 0.1,
+                                size * 0.65,
+                                -size * 0.65,
+                            )),
+                        ));
+                        // Left Antler Branch
+                        parent.spawn((
+                            Mesh3d(meshes.add(Cuboid::new(size * 0.15, size * 0.05, size * 0.05))),
+                            MeshMaterial3d(antler_mat.clone()),
+                            Transform::from_translation(Vec3::new(
+                                -size * 0.18,
+                                size * 0.75,
+                                -size * 0.65,
+                            )),
+                        ));
+                        // Right Antler Base
+                        parent.spawn((
+                            Mesh3d(meshes.add(Cuboid::new(size * 0.05, size * 0.35, size * 0.05))),
+                            MeshMaterial3d(antler_mat.clone()),
+                            Transform::from_translation(Vec3::new(
+                                size * 0.1,
+                                size * 0.65,
+                                -size * 0.65,
+                            )),
+                        ));
+                        // Right Antler Branch
+                        parent.spawn((
+                            Mesh3d(meshes.add(Cuboid::new(size * 0.15, size * 0.05, size * 0.05))),
+                            MeshMaterial3d(antler_mat),
+                            Transform::from_translation(Vec3::new(
+                                size * 0.18,
+                                size * 0.75,
+                                -size * 0.65,
+                            )),
+                        ));
+                    }
+
+                    // 4. Legs
                     let leg_count = if species == Species::Spider { 8 } else { 4 };
                     for i in 0..leg_count {
                         let x_side = if i % 2 == 0 { -0.4 } else { 0.4 };
@@ -323,14 +393,14 @@ fn spawn_animals(
                                 side: x_side,
                                 front: z_pos,
                             },
-                            Mesh3d(meshes.add(Cuboid::new(size * 0.1, size * 0.5, size * 0.1))),
+                            Mesh3d(meshes.add(leg_shape)),
                             MeshMaterial3d(materials.add(StandardMaterial {
                                 base_color: color,
                                 ..default()
                             })),
                             Transform::from_translation(Vec3::new(
-                                x_side * size,
-                                -size * 0.4,
+                                x_side * leg_x_offset,
+                                leg_y,
                                 z_pos * size,
                             )),
                         ));
@@ -506,6 +576,18 @@ fn animal_ai(
                 | Species::Cyclops
                 | Species::Triangaroo
         );
+
+        // Despawn day-only surface animals at night if they are not underground (y > 10.0)
+        let is_day_animal = matches!(
+            creature.species,
+            Species::Deer | Species::Cow | Species::Pig | Species::Chicken
+        );
+        if !is_day && is_day_animal && pos.y > 10.0 {
+            if let Ok(mut cmd) = commands.get_entity(entity) {
+                cmd.despawn();
+            }
+            continue;
+        }
 
         // Despawn monsters in daylight if they are not underground (y > 10.0)
         if is_day && is_monster && pos.y > 10.0 {

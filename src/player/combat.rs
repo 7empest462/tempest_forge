@@ -4,6 +4,7 @@ use crate::ui::UiState;
 use crate::voxel::BlockType;
 use crate::world::noise_generator::NoiseGenerator;
 use crate::world::tree_generator::TreeEntity;
+use bevy::ecs::system::SystemParam;
 use bevy::math::primitives::Capsule3d;
 use bevy::prelude::*;
 use bevy_voxel_world::prelude::*;
@@ -41,6 +42,11 @@ impl Plugin for CombatPlugin {
                 update_weapon_sway,
                 weapon_model_sync,
                 update_weapon_visibilities,
+            ),
+        );
+        app.add_systems(
+            Update,
+            (
                 projectile_update,
                 health_death,
                 dying_update,
@@ -659,7 +665,7 @@ fn weapon_model_sync(
                             ThirdPersonWeaponModel,
                             Mesh3d(pick_mesh),
                             MeshMaterial3d(pick_mat),
-                            Transform::from_xyz(0.0, -0.6, 0.0)
+                            Transform::from_xyz(0.0, -0.65, 0.0)
                                 .with_rotation(Quat::from_rotation_x(1.5)),
                             Visibility::default(),
                             InheritedVisibility::default(),
@@ -698,7 +704,7 @@ fn weapon_model_sync(
                             ThirdPersonWeaponModel,
                             Mesh3d(sword_mesh),
                             MeshMaterial3d(sword_mat),
-                            Transform::from_xyz(0.0, -0.6, 0.0)
+                            Transform::from_xyz(0.0, -0.65, 0.0)
                                 .with_rotation(Quat::from_rotation_x(1.5)),
                             Visibility::default(),
                             InheritedVisibility::default(),
@@ -738,8 +744,8 @@ fn weapon_model_sync(
                             ThirdPersonWeaponModel,
                             Mesh3d(laser_mesh),
                             MeshMaterial3d(laser_mat),
-                            Transform::from_xyz(0.0, -0.6, 0.0)
-                                .with_rotation(Quat::from_rotation_x(1.5)),
+                            Transform::from_xyz(0.0, -0.65, 0.0)
+                                .with_rotation(Quat::from_rotation_x(0.15)),
                             Visibility::default(),
                             InheritedVisibility::default(),
                         ))
@@ -772,8 +778,10 @@ fn weapon_model_sync(
                         .spawn((
                             EquippedWeaponModel,
                             ThirdPersonWeaponModel,
-                            Transform::from_xyz(0.0, -0.6, 0.0)
-                                .with_rotation(Quat::from_rotation_y(-std::f32::consts::FRAC_PI_2)),
+                            Transform::from_xyz(0.0, -0.65, 0.0).with_rotation(
+                                Quat::from_rotation_x(-1.35)
+                                    * Quat::from_rotation_y(-std::f32::consts::FRAC_PI_2),
+                            ),
                             Visibility::default(),
                             InheritedVisibility::default(),
                         ))
@@ -809,8 +817,10 @@ fn weapon_model_sync(
                         .spawn((
                             EquippedWeaponModel,
                             ThirdPersonWeaponModel,
-                            Transform::from_xyz(0.0, -0.6, 0.0)
-                                .with_rotation(Quat::from_rotation_y(-std::f32::consts::FRAC_PI_2)),
+                            Transform::from_xyz(0.0, -0.65, 0.0).with_rotation(
+                                Quat::from_rotation_x(-1.35)
+                                    * Quat::from_rotation_y(-std::f32::consts::FRAC_PI_2),
+                            ),
                             Visibility::default(),
                             InheritedVisibility::default(),
                         ))
@@ -846,8 +856,10 @@ fn weapon_model_sync(
                         .spawn((
                             EquippedWeaponModel,
                             ThirdPersonWeaponModel,
-                            Transform::from_xyz(0.0, -0.6, 0.0)
-                                .with_rotation(Quat::from_rotation_y(-std::f32::consts::FRAC_PI_2)),
+                            Transform::from_xyz(0.0, -0.65, 0.0).with_rotation(
+                                Quat::from_rotation_x(-1.35)
+                                    * Quat::from_rotation_y(0.15 - std::f32::consts::FRAC_PI_2),
+                            ),
                             Visibility::default(),
                             InheritedVisibility::default(),
                         ))
@@ -883,8 +895,10 @@ fn weapon_model_sync(
                         .spawn((
                             EquippedWeaponModel,
                             ThirdPersonWeaponModel,
-                            Transform::from_xyz(0.0, -0.6, 0.0)
-                                .with_rotation(Quat::from_rotation_y(-std::f32::consts::FRAC_PI_2)),
+                            Transform::from_xyz(0.0, -0.65, 0.0).with_rotation(
+                                Quat::from_rotation_x(-1.35)
+                                    * Quat::from_rotation_y(0.15 - std::f32::consts::FRAC_PI_2),
+                            ),
                             Visibility::default(),
                             InheritedVisibility::default(),
                         ))
@@ -984,26 +998,32 @@ fn melee_attack(
     }
 }
 
+#[derive(SystemParam)]
+pub struct LaserParams<'w, 's> {
+    pub commands: Commands<'w, 's>,
+    pub meshes: ResMut<'w, Assets<Mesh>>,
+    pub materials: ResMut<'w, Assets<StandardMaterial>>,
+    pub laser_audio: ResMut<'w, LaserAudio>,
+    pub water_impulses: MessageWriter<'w, crate::world::water::WaterImpulseEvent>,
+    pub hit_events: MessageWriter<'w, LaserHitEvent>,
+}
+
 pub fn fire_laser(
     mouse_input: Res<ButtonInput<MouseButton>>,
     weapon: Res<WeaponState>,
-    mut commands: Commands,
+    player_query: Query<(&Transform, &CameraMode), (With<Player>, Without<LaserBeam>)>,
     camera_query: Query<(&GlobalTransform, &Camera3d)>,
     mut voxel_world: VoxelWorld<NoiseGenerator>,
     mut hittable_query: Query<
         (Entity, &GlobalTransform, &mut Health),
         (With<Hittable>, Without<DamageEvent>, Without<Player>),
     >,
-    mut hit_events: MessageWriter<LaserHitEvent>,
     time: Res<Time>,
     ui_state: Res<UiState>,
-    mut beam_query: Query<(Entity, &mut Transform), With<LaserBeam>>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-    mut laser_audio: ResMut<LaserAudio>,
+    mut beam_query: Query<(Entity, &mut Transform), (With<LaserBeam>, Without<Player>)>,
     laser_heat: Res<LaserHeat>,
     gamepads: Query<&Gamepad>,
-    mut water_impulses: MessageWriter<crate::world::water::WaterImpulseEvent>,
+    mut params: LaserParams,
 ) {
     let mut is_firing = mouse_input.pressed(MouseButton::Left);
     for gamepad in gamepads.iter() {
@@ -1019,37 +1039,51 @@ pub fn fire_laser(
         || laser_heat.overheated
     {
         for (entity, _) in beam_query.iter() {
-            commands.entity(entity).despawn();
+            params.commands.entity(entity).despawn();
         }
-        if let Some(audio_entity) = laser_audio.playing_entity {
-            commands.entity(audio_entity).despawn();
-            laser_audio.playing_entity = None;
+        if let Some(audio_entity) = params.laser_audio.playing_entity {
+            params.commands.entity(audio_entity).despawn();
+            params.laser_audio.playing_entity = None;
         }
         return;
     }
 
-    if laser_audio.playing_entity.is_none() {
+    if params.laser_audio.playing_entity.is_none() {
         println!("LASER AUDIO STARTING...");
-        laser_audio.playing_entity = Some(
-            commands
+        params.laser_audio.playing_entity = Some(
+            params
+                .commands
                 .spawn((
-                    AudioPlayer::new(laser_audio.sound.clone()),
+                    AudioPlayer::new(params.laser_audio.sound.clone()),
                     PlaybackSettings::LOOP, // Default volume to avoid compilation error
                 ))
                 .id(),
         );
     }
 
-    if let Ok((camera_transform, _)) = camera_query.single() {
+    if let Ok((player_transform, camera_mode)) = player_query.single()
+        && let Ok((camera_transform, _)) = camera_query.single()
+    {
         let shoot_pos = camera_transform.translation();
         let forward = camera_transform.forward();
 
-        // Offset the beam start point to the player's right hand position
-        let right = camera_transform.right();
-        let hand_offset = Vec3::from(right) * 0.5
-            + Vec3::from(camera_transform.down()) * 0.3
-            + Vec3::from(forward) * 0.5;
-        let beam_start = shoot_pos + hand_offset;
+        // Offset the beam start point to the player's weapon/hand position
+        let beam_start = if *camera_mode == CameraMode::FirstPerson {
+            let right = camera_transform.right();
+            let up = camera_transform.up();
+            shoot_pos
+                + Vec3::from(right) * 0.35
+                + Vec3::from(up) * -0.25
+                + Vec3::from(forward) * 0.7
+        } else {
+            let right = player_transform.right();
+            let up = player_transform.up();
+            let p_forward = player_transform.forward();
+            player_transform.translation
+                + Vec3::from(right) * 0.3
+                + Vec3::from(up) * 1.2
+                + Vec3::from(p_forward) * 0.75
+        };
 
         let mut hit_pos = shoot_pos + Vec3::from(forward) * 25.0;
 
@@ -1073,13 +1107,14 @@ pub fn fire_laser(
                 if horizontal_dist < 1.5 && (0.0..15.0).contains(&vertical_diff) {
                     health.hp -= 40.0 * time.delta_secs(); // Increased damage for faster tree chopping
                     hit_pos = closest_point; // Set hit point to the point on the ray
-                    hit_events.write(LaserHitEvent {
+                    params.hit_events.write(LaserHitEvent {
                         position: hit_pos,
                         _normal: -forward_vec,
                     });
                     if health.hp <= 0.0 {
                         // Death is handled in health_death now, but we add DamageEvent to trigger it
-                        commands
+                        params
+                            .commands
                             .entity(target_entity)
                             .insert(DamageEvent(health.hp.abs() + 1.0));
                     }
@@ -1090,39 +1125,43 @@ pub fn fire_laser(
         let ray = Ray3d::new(shoot_pos, forward);
         if let Some(hit) = voxel_world.raycast(ray, &|(_, v): (Vec3, WorldVoxel)| v.is_solid()) {
             hit_pos = hit.position;
-            hit_events.write(LaserHitEvent {
+            params.hit_events.write(LaserHitEvent {
                 position: hit_pos,
                 _normal: hit.normal.unwrap_or(Vec3::Y),
             });
             voxel_world.set_voxel(hit.voxel_pos(), WorldVoxel::Air);
 
             if hit_pos.y < 35.0 && hit_pos.y > 20.0 {
-                water_impulses.write(crate::world::water::WaterImpulseEvent {
-                    position: hit_pos,
-                    force: -15.0,
-                    radius: 1.5,
-                });
+                params
+                    .water_impulses
+                    .write(crate::world::water::WaterImpulseEvent {
+                        position: hit_pos,
+                        force: -15.0,
+                        radius: 1.5,
+                    });
             }
         }
 
         let beam_len = beam_start.distance(hit_pos);
-        let beam_center = beam_start + Vec3::from(forward) * (beam_len * 0.5);
+        let beam_center = beam_start.lerp(hit_pos, 0.5);
+        let beam_dir = (hit_pos - beam_start).normalize_or_zero();
 
         if let Ok((_, mut transform)) = beam_query.single_mut() {
             transform.translation = beam_center;
             transform.scale = Vec3::new(1.0, beam_len, 1.0);
-            transform.look_to(forward, Vec3::Y);
-            transform.rotate_local_x(std::f32::consts::FRAC_PI_2);
+            transform.rotation = Quat::from_rotation_arc(Vec3::Y, beam_dir);
         } else {
-            commands.spawn((
+            params.commands.spawn((
                 LaserBeam,
-                Mesh3d(meshes.add(Cylinder::new(0.05, 1.0))),
-                MeshMaterial3d(materials.add(StandardMaterial {
+                Mesh3d(params.meshes.add(Cylinder::new(0.05, 1.0))),
+                MeshMaterial3d(params.materials.add(StandardMaterial {
                     base_color: Color::NONE,
                     emissive: LinearRgba::from(Color::srgb(0.0, 5.0, 5.0)),
                     ..default()
                 })),
-                Transform::from_translation(beam_center).with_scale(Vec3::new(1.0, beam_len, 1.0)),
+                Transform::from_translation(beam_center)
+                    .with_scale(Vec3::new(1.0, beam_len, 1.0))
+                    .with_rotation(Quat::from_rotation_arc(Vec3::Y, beam_dir)),
             ));
         }
     }
@@ -1172,7 +1211,7 @@ fn fire_guns(
     gun_sounds: Res<GunSounds>,
     keys: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
-    player_query: Query<&Transform, With<Player>>,
+    player_query: Query<(&Transform, &CameraMode), With<Player>>,
     camera_query: Query<&GlobalTransform, With<Camera3d>>,
     ui_state: Res<UiState>,
     gamepads: Query<&Gamepad>,
@@ -1334,95 +1373,134 @@ fn fire_guns(
     commands.spawn((AudioPlayer::new(shoot_sound), PlaybackSettings::DESPAWN));
 
     // Spawn projectile bullet + muzzle flash
-    if let Ok(_player_transform) = player_query.single()
+    if let Ok((player_transform, camera_mode)) = player_query.single()
         && let Ok(camera_transform) = camera_query.single()
     {
-        let camera_pos = camera_transform.translation();
-        let camera_forward = camera_transform.forward();
-        let right = camera_transform.right();
-        let up = camera_transform.up();
-
         // ==================== WEAPON-SPECIFIC CONFIG ====================
-        let (velocity_scalar, damage, lifetime, bullet_mesh, bullet_material, muzzle_intensity) =
-            match current_weapon {
-                WeaponState::Pistol => (
-                    130.0,
-                    15.0,
-                    2.5,
-                    meshes.add(Capsule3d::new(0.012, 0.09)),
-                    materials.add(StandardMaterial {
-                        base_color: Color::srgb(0.95, 0.95, 0.98),
-                        metallic: 0.85,
-                        reflectance: 0.7,
-                        emissive: LinearRgba::from(Color::srgb(6.0, 5.0, 2.0)),
-                        ..default()
-                    }),
-                    12.0,
-                ),
-                WeaponState::Revolver => (
-                    125.0,
-                    28.0,
-                    2.8,
-                    meshes.add(Capsule3d::new(0.018, 0.11)),
-                    materials.add(StandardMaterial {
-                        base_color: Color::srgb(0.9, 0.85, 0.7),
-                        metallic: 0.9,
-                        emissive: LinearRgba::from(Color::srgb(10.0, 7.0, 2.0)),
-                        ..default()
-                    }),
-                    18.0,
-                ),
-                WeaponState::Rifle => (
-                    160.0,
-                    22.0,
-                    3.5,
-                    meshes.add(Capsule3d::new(0.014, 0.14)),
-                    materials.add(StandardMaterial {
-                        base_color: Color::srgb(0.85, 0.85, 0.9),
-                        metallic: 0.8,
-                        emissive: LinearRgba::from(Color::srgb(8.0, 6.0, 1.5)),
-                        ..default()
-                    }),
-                    15.0,
-                ),
-                WeaponState::Sniper => (
-                    220.0,
-                    95.0,
-                    5.0,
-                    meshes.add(Capsule3d::new(0.016, 0.22)),
-                    materials.add(StandardMaterial {
-                        base_color: Color::srgb(0.92, 0.92, 0.95),
-                        metallic: 0.95,
-                        emissive: LinearRgba::from(Color::srgb(15.0, 10.0, 3.0)),
-                        ..default()
-                    }),
-                    25.0,
-                ),
-                _ => unreachable!(),
-            };
-
-        // ==================== SPAWN POSITION (Barrel) ====================
-        let barrel_offset = right * 0.28 + up * 0.18 + camera_forward * 0.65;
-        let spawn_pos = camera_pos + barrel_offset;
-
-        // Raycast for accurate aiming
-        let ray = Ray3d::new(camera_pos, camera_forward);
-        let target_point = if let Some(hit) =
-            voxel_world.raycast(ray, &|(_, v): (Vec3, WorldVoxel)| v.is_solid())
-        {
-            hit.position
-        } else {
-            camera_pos + camera_forward * 200.0
+        let (
+            velocity_scalar,
+            damage,
+            lifetime,
+            bullet_mesh,
+            bullet_material,
+            muzzle_intensity,
+            fp_offset,
+            tp_offset,
+        ) = match current_weapon {
+            WeaponState::Pistol => (
+                130.0,
+                15.0,
+                2.5,
+                meshes.add(Capsule3d::new(0.012, 0.09)),
+                materials.add(StandardMaterial {
+                    base_color: Color::srgb(0.95, 0.95, 0.98),
+                    metallic: 0.85,
+                    reflectance: 0.7,
+                    emissive: LinearRgba::from(Color::srgb(6.0, 5.0, 2.0)),
+                    ..default()
+                }),
+                12.0,
+                Vec3::new(0.22, -0.16, 0.65),
+                Vec3::new(0.3, 1.25, 0.7),
+            ),
+            WeaponState::Revolver => (
+                125.0,
+                28.0,
+                2.8,
+                meshes.add(Capsule3d::new(0.018, 0.11)),
+                materials.add(StandardMaterial {
+                    base_color: Color::srgb(0.9, 0.85, 0.7),
+                    metallic: 0.9,
+                    emissive: LinearRgba::from(Color::srgb(10.0, 7.0, 2.0)),
+                    ..default()
+                }),
+                18.0,
+                Vec3::new(0.22, -0.16, 0.7),
+                Vec3::new(0.3, 1.25, 0.75),
+            ),
+            WeaponState::Rifle => (
+                160.0,
+                22.0,
+                3.5,
+                meshes.add(Capsule3d::new(0.014, 0.14)),
+                materials.add(StandardMaterial {
+                    base_color: Color::srgb(0.85, 0.85, 0.9),
+                    metallic: 0.8,
+                    emissive: LinearRgba::from(Color::srgb(8.0, 6.0, 1.5)),
+                    ..default()
+                }),
+                15.0,
+                Vec3::new(0.22, -0.18, 0.85),
+                Vec3::new(0.3, 1.2, 0.9),
+            ),
+            WeaponState::Sniper => (
+                220.0,
+                95.0,
+                5.0,
+                meshes.add(Capsule3d::new(0.016, 0.22)),
+                materials.add(StandardMaterial {
+                    base_color: Color::srgb(0.92, 0.92, 0.95),
+                    metallic: 0.95,
+                    emissive: LinearRgba::from(Color::srgb(15.0, 10.0, 3.0)),
+                    ..default()
+                }),
+                25.0,
+                Vec3::new(0.22, -0.18, 1.1),
+                Vec3::new(0.3, 1.2, 1.2),
+            ),
+            _ => unreachable!(),
         };
 
-        let shoot_dir = (target_point - spawn_pos).normalize_or_zero();
+        // ==================== SPAWN POSITION & AIM DIRECTION ====================
+        let camera_pos = camera_transform.translation();
+        let camera_forward = camera_transform.forward();
+
+        let (spawn_pos, shoot_dir) = if *camera_mode == CameraMode::FirstPerson {
+            let right = camera_transform.right();
+            let up = camera_transform.up();
+            let barrel_offset =
+                right * fp_offset.x + up * fp_offset.y + camera_forward * fp_offset.z;
+            let spawn_pos = camera_pos + barrel_offset;
+
+            let ray = Ray3d::new(camera_pos, camera_forward);
+            let target_point = if let Some(hit) =
+                voxel_world.raycast(ray, &|(_, v): (Vec3, WorldVoxel)| v.is_solid())
+            {
+                hit.position
+            } else {
+                camera_pos + camera_forward * 200.0
+            };
+            let shoot_dir = (target_point - spawn_pos).normalize_or_zero();
+            (spawn_pos, shoot_dir)
+        } else {
+            let player_pos = player_transform.translation;
+            let player_right = player_transform.right();
+            let player_up = player_transform.up();
+            let player_forward = player_transform.forward();
+            let barrel_offset =
+                player_right * tp_offset.x + player_up * tp_offset.y + player_forward * tp_offset.z;
+            let spawn_pos = player_pos + barrel_offset;
+
+            let ray = Ray3d::new(camera_pos, camera_forward);
+            let target_point = if let Some(hit) =
+                voxel_world.raycast(ray, &|(_, v): (Vec3, WorldVoxel)| v.is_solid())
+            {
+                hit.position
+            } else {
+                camera_pos + camera_forward * 200.0
+            };
+            let shoot_dir = (target_point - spawn_pos).normalize_or_zero();
+            (spawn_pos, shoot_dir)
+        };
+
         let velocity = shoot_dir * velocity_scalar;
 
         // Spawn Bullet
         commands.spawn((
             Mesh3d(bullet_mesh),
             MeshMaterial3d(bullet_material),
-            Transform::from_translation(spawn_pos).looking_to(shoot_dir, Vec3::Y),
+            Transform::from_translation(spawn_pos)
+                .with_rotation(Quat::from_rotation_arc(Vec3::Y, shoot_dir)),
             Projectile {
                 velocity,
                 damage,

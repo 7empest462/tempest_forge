@@ -53,7 +53,6 @@ panic = "abort"
 debug-assertions = false
 debug = false
 overflow-checks = false
-strip = "symbols"
 rpath = false
 
 [profile.dev]

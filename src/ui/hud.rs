@@ -113,8 +113,8 @@ pub fn draw_hud(
                                 let (current_ammo, max_ammo) = match *weapon {
                                     WeaponState::Pistol => (ammo_state.pistol_ammo, 12),
                                     WeaponState::Revolver => (ammo_state.revolver_ammo, 6),
-                                    WeaponState::Rifle => (ammo_state.rifle_ammo, 30),
-                                    WeaponState::Sniper => (ammo_state.sniper_ammo, 5),
+                                    WeaponState::Rifle => (ammo_state.rifle_ammo, 45),
+                                    WeaponState::Sniper => (ammo_state.sniper_ammo, 9),
                                     _ => (0, 0),
                                 };
                                 ui.label("AMMO:");
