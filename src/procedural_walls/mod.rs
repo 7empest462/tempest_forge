@@ -15,6 +15,7 @@ pub use wall_constructor::WallConstructor;
 
 use crate::voxel::BlockType;
 use crate::world::noise_generator::NoiseGenerator;
+use crate::world::water::MainCamera;
 use bevy::prelude::*;
 use bevy_voxel_world::prelude::VoxelWorld;
 use rand::RngExt;
@@ -763,7 +764,7 @@ fn mine_procedural_bricks(
     mut commands: Commands,
     mouse_input: Res<ButtonInput<MouseButton>>,
     weapon: Res<crate::player::combat::WeaponState>,
-    camera_query: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
+    camera_query: Query<(&Camera, &GlobalTransform), With<MainCamera>>,
     mut brick_query: Query<
         (
             Entity,
@@ -961,7 +962,7 @@ fn carve_gateways(
     mut commands: Commands,
     keys: Res<ButtonInput<KeyCode>>,
     ui_state: Res<crate::ui::UiState>,
-    camera_query: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
+    camera_query: Query<(&Camera, &GlobalTransform), With<MainCamera>>,
     brick_query: Query<(Entity, &GlobalTransform, &Transform), With<ProceduralBrick>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     asset_server: Res<AssetServer>,

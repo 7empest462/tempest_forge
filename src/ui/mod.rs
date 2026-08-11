@@ -15,6 +15,18 @@ pub enum InputScheme {
     SteamDeck,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum InventoryCategory {
+    #[default]
+    Resources,
+    Tools,
+    Combat,
+    Mech,
+    Build,
+    Machinery,
+    Maritime,
+}
+
 /// UI state tracking which panels are open
 #[derive(Resource, Default, PartialEq, Eq)]
 pub struct UiState {
@@ -36,6 +48,16 @@ impl Plugin for UiPlugin {
             .init_resource::<EguiReady>()
             .init_resource::<pause_menu::PauseMenuState>()
             .add_systems(Update, egui_warmup)
+            // Main Menu Screen Systems
+            .add_systems(
+                Update,
+                (
+                    draw_main_menu.run_if(resource_equals(EguiReady(true))),
+                    debug_menu_input.run_if(resource_equals(EguiReady(true))),
+                    enforce_menu_cursor,
+                )
+                    .run_if(in_state(GameState::MainMenu)),
+            )
             // Loading Screen Systems
             .add_systems(
                 Update,
@@ -65,15 +87,24 @@ fn draw_loading_screen(
     mut next_state: ResMut<NextState<GameState>>,
     mut timer: Local<f32>,
     time: Res<Time>,
+    _voxel_world: bevy_voxel_world::prelude::VoxelWorld<
+        crate::world::noise_generator::NoiseGenerator,
+    >,
+    _player_query: Query<&Transform, With<crate::player::camera::Player>>,
 ) {
     *timer += time.delta_secs();
     let chunk_count = chunk_query.iter().count();
     let target_chunks = 128; // Increased for visibility
     let progress = (chunk_count as f32 / target_chunks as f32).min(1.0);
 
-    let Ok(ctx) = contexts.ctx_mut() else {
-        return;
+    let ctx = match contexts.ctx_mut() {
+        Ok(c) => c,
+        Err(e) => {
+            warn!("[DEBUG] draw_loading_screen: egui context error: {:?}", e);
+            return;
+        }
     };
+
     bevy_egui::egui::CentralPanel::default()
         .frame(bevy_egui::egui::Frame::NONE.fill(bevy_egui::egui::Color32::from_rgb(10, 10, 15)))
         .show(ctx, |ui| {
@@ -255,6 +286,242 @@ fn grab_mouse(
         if cursor_options.grab_mode != CursorGrabMode::Locked {
             cursor_options.grab_mode = CursorGrabMode::Locked;
             cursor_options.visible = false;
+        }
+    }
+}
+
+/// System to draw the main menu screen
+fn draw_main_menu(
+    mut contexts: bevy_egui::EguiContexts,
+    mut next_state: ResMut<NextState<GameState>>,
+    mut frame_counter: Local<u32>,
+    windows: Query<&Window, With<bevy::window::PrimaryWindow>>,
+    mut was_play_hovered: Local<bool>,
+    mut was_exit_hovered: Local<bool>,
+) {
+    *frame_counter += 1;
+    if *frame_counter % 60 == 0 {
+        info!("[DEBUG MENU] draw_main_menu runs. Frame count: {}", *frame_counter);
+        if let Ok(window) = windows.single() {
+            info!(
+                "[DEBUG SCALE] Window size logical: {}x{}, physical: {}x{}, scale factor: {}",
+                window.width(), window.height(),
+                window.physical_width(), window.physical_height(),
+                window.scale_factor()
+            );
+        }
+    }
+
+    let ctx = match contexts.ctx_mut() {
+        Ok(c) => c,
+        Err(e) => {
+            if *frame_counter % 60 == 0 {
+                warn!("[DEBUG MENU] ctx_mut returned error: {:?}", e);
+            }
+            return;
+        }
+    };
+
+    if *frame_counter % 60 == 0 {
+        info!(
+            "[DEBUG SCALE] Egui screen rect: {:?}",
+            ctx.screen_rect()
+        );
+        info!("[DEBUG MENU] Egui context retrieved successfully. Pointer pos: {:?}", ctx.pointer_latest_pos());
+    }
+
+    ctx.input(|i| {
+        info!(
+            "[DEBUG EGUI INPUT] Pointer pos: {:?}, pressed: {}, released: {}, buttons: {:?}, events: {:?}",
+            i.pointer.latest_pos(),
+            i.pointer.any_pressed(),
+            i.pointer.any_released(),
+            i.pointer.button_down(bevy_egui::egui::PointerButton::Primary),
+            i.events
+        );
+    });
+
+    bevy_egui::egui::CentralPanel::default()
+        .frame(bevy_egui::egui::Frame::NONE.fill(bevy_egui::egui::Color32::from_black_alpha(100)))
+        .show(ctx, |ui| {
+
+
+            ui.vertical_centered(|ui| {
+                ui.add_space(ui.available_height() * 0.25);
+
+                // Title
+                ui.heading(
+                    bevy_egui::egui::RichText::new("TEMPEST FORGE")
+                        .size(72.0)
+                        .color(bevy_egui::egui::Color32::from_rgb(0, 200, 255))
+                        .strong(),
+                );
+
+                ui.add_space(10.0);
+                ui.label(
+                    bevy_egui::egui::RichText::new("Procedural Voxel & Water Simulation")
+                        .size(20.0)
+                        .color(bevy_egui::egui::Color32::from_rgb(200, 240, 255))
+                        .italics(),
+                );
+
+                ui.add_space(60.0);
+
+                // Menu Buttons
+                let button_width = 250.0;
+                let button_height = 40.0;
+
+                ui.scope(|ui| {
+                    ui.style_mut().spacing.item_spacing = bevy_egui::egui::vec2(0.0, 15.0);
+
+                    let play_btn = ui.add_sized(
+                        [button_width, button_height],
+                        bevy_egui::egui::Button::new(
+                            bevy_egui::egui::RichText::new("🚀 FORGE NEW WORLD")
+                                .size(18.0)
+                                .strong()
+                                .color(bevy_egui::egui::Color32::WHITE),
+                        )
+                        .fill(bevy_egui::egui::Color32::from_rgb(0, 120, 200)),
+                    );
+
+                    let play_hovered = play_btn.hovered();
+                    if play_hovered != *was_play_hovered {
+                        *was_play_hovered = play_hovered;
+                        info!("[DEBUG MENU] FORGE NEW WORLD button hover changed: {} (Pointer: {:?})", play_hovered, ctx.pointer_latest_pos());
+                    }
+
+                    info!(
+                        "[DEBUG EGUI FRAME] Frame: {}, pointer_pos: {:?}, play_rect: {:?}, hovered: {}, clicked: {}, focused: {}, pointer_down: {}",
+                        *frame_counter,
+                        ctx.pointer_latest_pos(),
+                        play_btn.rect,
+                        play_btn.hovered(),
+                        play_btn.clicked(),
+                        ctx.input(|i| i.focused),
+                        ctx.input(|i| i.pointer.any_down())
+                    );
+                    info!(
+                        "[DEBUG EGUI HIT] ui.clip_rect(): {:?}, ui.rect_contains_pointer(): {}, ui.available_rect_before_wrap(): {:?}",
+                        ui.clip_rect(),
+                        ui.rect_contains_pointer(play_btn.rect),
+                        ui.available_rect_before_wrap()
+                    );
+                    let is_over = ctx.is_pointer_over_area();
+                    let wants_input = ctx.wants_pointer_input();
+                    let has_ptr = ctx.input(|i| i.pointer.has_pointer());
+                    let hover_pos = ctx.input(|i| i.pointer.hover_pos());
+                    let dragged_id = ctx.dragged_id();
+                    let is_dragging = dragged_id.is_some();
+                    ctx.memory(|mem| {
+                        info!(
+                            "[DEBUG EGUI MEM] focused: {:?}, ui.is_enabled(): {}, is_pointer_over_area(): {}, wants_pointer_input(): {}, has_pointer: {}, hover_pos: {:?}, dragged_id: {:?}, dragging: {}",
+                            mem.focused(),
+                            ui.is_enabled(),
+                            is_over,
+                            wants_input,
+                            has_ptr,
+                            hover_pos,
+                            dragged_id,
+                            is_dragging
+                        );
+                    });
+                    ctx.viewport(|vp| {
+                        info!("[DEBUG WIDGETS THIS PASS] count of layers: {}", vp.this_pass.widgets.layers().count());
+                        for (layer_id, rects) in vp.this_pass.widgets.layers() {
+                            info!("  Layer: {:?}", layer_id);
+                            for w in rects {
+                                info!("    Widget ID: {:?}, rect: {:?}", w.id, w.rect);
+                            }
+                        }
+                    });
+                    ctx.viewport(|vp| {
+                        info!("[DEBUG WIDGETS PREV PASS] count of layers: {}", vp.prev_pass.widgets.layers().count());
+                        for (layer_id, rects) in vp.prev_pass.widgets.layers() {
+                            info!("  Layer: {:?}", layer_id);
+                            for w in rects {
+                                info!("    Widget ID: {:?}, rect: {:?}", w.id, w.rect);
+                            }
+                        }
+                    });
+                    info!("[DEBUG PLAY RESPONSE] {:?}", play_btn);
+                    ctx.input(|i| {
+                        info!(
+                            "[DEBUG EGUI PTR] press_origin: {:?}, delta: {:?}",
+                            i.pointer.press_origin(),
+                            i.pointer.delta()
+                        );
+                    });
+
+                    if play_btn.clicked() {
+                        info!("[DEBUG MENU] FORGE NEW WORLD button clicked! Setting state to Loading.");
+                        next_state.set(GameState::Loading);
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    {
+                        let exit_btn = ui.add_sized(
+                            [button_width, button_height],
+                            bevy_egui::egui::Button::new(
+                                bevy_egui::egui::RichText::new("🚪 EXIT GAME")
+                                    .size(18.0)
+                                    .strong()
+                                    .color(bevy_egui::egui::Color32::WHITE),
+                            )
+                            .fill(bevy_egui::egui::Color32::from_rgb(180, 50, 50)),
+                        );
+
+                        let exit_hovered = exit_btn.hovered();
+                        if exit_hovered != *was_exit_hovered {
+                            *was_exit_hovered = exit_hovered;
+                            info!("[DEBUG MENU] EXIT GAME button hover changed: {} (Pointer: {:?})", exit_hovered, ctx.pointer_latest_pos());
+                        }
+
+                        info!(
+                            "[DEBUG EGUI FRAME EXIT] exit_rect: {:?}, hovered: {}, clicked: {}",
+                            exit_btn.rect,
+                            exit_btn.hovered(),
+                            exit_btn.clicked()
+                        );
+
+                        if exit_btn.clicked() {
+                            info!("[DEBUG MENU] EXIT GAME button clicked! Exiting.");
+                            std::process::exit(0);
+                        }
+                    }
+                });
+            });
+        });
+}
+
+/// System to print mouse clicks and cursor positions in MainMenu for debugging
+fn debug_menu_input(
+    mouse_input: Res<ButtonInput<MouseButton>>,
+    windows: Query<&Window, With<bevy::window::PrimaryWindow>>,
+    ready: Res<EguiReady>,
+) {
+    if ready.0 && mouse_input.just_pressed(MouseButton::Left) {
+        if let Ok(window) = windows.single() {
+            info!(
+                "[DEBUG INPUT] Mouse left click! Window cursor pos: {:?}",
+                window.cursor_position()
+            );
+        }
+    }
+}
+
+/// System to ensure the cursor is always unlocked and visible during the Main Menu
+fn enforce_menu_cursor(
+    mut windows: Query<&mut bevy::window::CursorOptions, With<bevy::window::PrimaryWindow>>,
+) {
+    if let Ok(mut cursor_options) = windows.single_mut() {
+        if cursor_options.grab_mode != bevy::window::CursorGrabMode::None {
+            info!("[DEBUG CURSOR] Main menu cursor was grabbed! Unlocking it now.");
+            cursor_options.grab_mode = bevy::window::CursorGrabMode::None;
+        }
+        if !cursor_options.visible {
+            info!("[DEBUG CURSOR] Main menu cursor was hidden! Making it visible now.");
+            cursor_options.visible = true;
         }
     }
 }

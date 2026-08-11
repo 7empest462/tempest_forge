@@ -1,5 +1,5 @@
 use crate::persistence::{LoadEvent, SaveEvent};
-use crate::ui::{EguiReady, UiState};
+use crate::ui::UiState;
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 
@@ -9,12 +9,12 @@ pub struct PauseMenuState;
 /// Draw pause menu (toggleable with ESC key)
 pub fn draw_pause_menu(
     mut contexts: EguiContexts,
-    ready: Res<EguiReady>,
+
     mut ui_state: ResMut<UiState>,
     mut save_events: MessageWriter<SaveEvent>,
     mut load_events: MessageWriter<LoadEvent>,
 ) {
-    if !ready.0 || !ui_state.show_pause_menu {
+    if !ui_state.show_pause_menu {
         return;
     }
 

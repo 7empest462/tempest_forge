@@ -1,13 +1,13 @@
 use crate::player::camera::{CameraMode, MechSuit, PhysicsState, Player};
 use crate::player::combat::{AmmoState, LaserHeat, WeaponState};
-use crate::ui::EguiReady;
+
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 
 /// Draw HUD overlay - always visible on screen
 pub fn draw_hud(
     mut contexts: EguiContexts,
-    ready: Res<EguiReady>,
+
     ui_state: Res<crate::ui::UiState>,
     player_query: Query<(&PhysicsState, &CameraMode, &MechSuit), With<Player>>,
     weapon: Res<WeaponState>,
@@ -15,14 +15,11 @@ pub fn draw_hud(
     ammo_state: Res<AmmoState>,
     placement: Res<crate::player::interaction::PlacementState>,
 ) {
-    if !ready.0 {
-        return;
-    }
-    let Ok((physics, mode, mech)) = player_query.single() else {
+    let Ok(ctx) = contexts.ctx_mut() else {
         return;
     };
 
-    let Ok(ctx) = contexts.ctx_mut() else {
+    let Ok((physics, mode, mech)) = player_query.single() else {
         return;
     };
 
@@ -187,6 +184,10 @@ pub fn draw_hud(
                 });
             });
     }
+
+    let Ok(ctx) = contexts.ctx_mut() else {
+        return;
+    };
 
     // Bottom-center: Controls Hint (Compact)
     egui::Area::new(egui::Id::new("controls_area"))

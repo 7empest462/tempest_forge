@@ -1,6 +1,7 @@
 #![allow(clippy::type_complexity, clippy::too_many_arguments)]
 
 use bevy::prelude::*;
+// Removed as per instructions: use bevy_egui::{EguiContext, PrimaryEguiContext};
 use wasm_bindgen::prelude::*;
 
 pub mod entities;
@@ -16,8 +17,12 @@ pub mod ui;
 pub mod voxel;
 pub mod world;
 
+#[derive(Component)]
+pub struct MenuUiCamera;
+
 #[derive(States, Debug, Clone, Copy, Eq, PartialEq, Hash, Default)]
 pub enum GameState {
+    MainMenu,
     #[default]
     Loading,
     InGame,
@@ -26,12 +31,12 @@ pub enum GameState {
 #[wasm_bindgen]
 pub fn start_game() {
     #[cfg(not(target_arch = "wasm32"))]
-    let is_dev = std::env::args().any(|arg| arg == "--dev");
+    let _is_dev = std::env::args().any(|arg| arg == "--dev");
     #[cfg(target_arch = "wasm32")]
     let is_dev = false;
 
     let mut app = App::new();
-    // app.insert_resource(Msaa::Sample2);  <-- REMOVED as per instructions
+    //app.insert_resource(Msaa::Sample2);  <-- REMOVED as per instructions
 
     #[allow(unused_mut)]
     let mut plugins = DefaultPlugins.set(WindowPlugin {
@@ -62,21 +67,21 @@ pub fn start_game() {
     app.add_plugins(plugins);
 
     #[cfg(target_arch = "wasm32")]
-    app.add_systems(Update, handle_browser_gestures);
+    app.add_systems(Update, handle_browser_gestures.run_if(in_state(GameState::InGame)));
 
+    // Use default Egui settings (auto_create_primary_context = true) to ensure input is routed correctly.
     app.init_state::<GameState>()
         .add_plugins(bevy_rapier3d::prelude::RapierPhysicsPlugin::<()>::default())
         .add_plugins(bevy_hanabi::HanabiPlugin)
         .add_plugins(bevy_egui::EguiPlugin::default())
         .add_plugins(bevy::diagnostic::FrameTimeDiagnosticsPlugin::default())
         .add_plugins(bevy::diagnostic::EntityCountDiagnosticsPlugin::default());
-
-    if is_dev {
-        app.add_plugins(bevy_inspector_egui::quick::WorldInspectorPlugin::new())
-            .add_systems(Startup, register_custom_inspector);
-    }
-
+    // let  is_dev {
+    //     app.add_plugins(bevy_inspector_egui::quick::WorldInspectorPlugin::new())
+    //         .add_systems(Startup, register_custom_inspector);
+    // }
     app.add_plugins(world::WorldPlugin)
+        .add_plugins(world::dimension::DimensionPlugin)
         .add_plugins(machinery::MachineryPlugin)
         .add_plugins(entities::WildlifePlugin)
         .add_plugins(physics::PhysicsPlugin)
@@ -88,9 +93,28 @@ pub fn start_game() {
         .add_plugins(particle_effects::ParticleEffectsPlugin)
         .add_plugins(persistence::PersistencePlugin)
         .insert_resource(crate::voxel::chunk::build_block_registry())
-        .add_systems(Startup, setup)
+        .add_systems(Startup, (setup_alien_materials, setup))
+        .add_systems(OnEnter(GameState::MainMenu), spawn_menu_camera)
+        .add_systems(OnEnter(GameState::InGame), despawn_menu_camera)
+        .add_systems(OnEnter(GameState::Loading), log_loading_enter)
+        .add_systems(OnEnter(GameState::InGame), log_ingame_enter)
         .run();
 }
+
+fn setup_alien_materials(mut materials: ResMut<Assets<StandardMaterial>>, mut commands: Commands) {
+    let alien_materials = crate::voxel::chunk::build_alien_block_materials(&mut materials);
+    commands.insert_resource(alien_materials);
+}
+
+fn log_loading_enter() {
+    info!("[STATE] entered Loading");
+}
+
+fn log_ingame_enter() {
+    info!("[STATE] entered InGame");
+}
+
+#[allow(dead_code)]
 fn register_custom_inspector(type_registry: Res<AppTypeRegistry>) {
     let custom_impl = bevy_inspector_egui::inspector_egui_impls::InspectorEguiImpl::new(
         |val_any, ui, _, _, _| {
@@ -171,6 +195,24 @@ fn setup(
         Transform::IDENTITY,
         crate::world::env::Moon,
     ));
+}
+
+fn spawn_menu_camera(
+    mut windows: Query<&mut bevy::window::CursorOptions, With<bevy::window::PrimaryWindow>>,
+) {
+    info!("[DEBUG] spawn_menu_camera: entering MainMenu and unlocking cursor");
+
+    if let Ok(mut cursor_options) = windows.single_mut() {
+        cursor_options.grab_mode = bevy::window::CursorGrabMode::None;
+        cursor_options.visible = true;
+    }
+}
+
+fn despawn_menu_camera(mut commands: Commands, q: Query<Entity, With<MenuUiCamera>>) {
+    info!("[DEBUG] despawn_menu_camera: entering InGame and removing UI camera");
+    for e in &q {
+        commands.entity(e).despawn();
+    }
 }
 
 #[cfg(target_arch = "wasm32")]

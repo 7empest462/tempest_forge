@@ -1,9 +1,7 @@
 use super::water_gpu::{WATER_GRID_SIZE, WaterComputePlugin, WaterGpuHandles, WaterSimParams};
-use crate::player::camera::{CameraPivot, PhysicsState, Player};
-use crate::player::combat::Health;
+use crate::player::camera::PhysicsState;
 use crate::world::noise_generator::NoiseGenerator;
 use bevy::asset::RenderAssetUsages;
-use bevy::camera::{RenderTarget, visibility::RenderLayers};
 use bevy::mesh::Indices;
 use bevy::mesh::VertexAttributeValues;
 use bevy::prelude::*;
@@ -15,34 +13,6 @@ use rand::RngExt;
 
 pub struct WaterPlugin;
 
-#[derive(Component)]
-pub struct MainCamera;
-
-#[derive(Component)]
-pub struct ReflectionCamera;
-
-#[derive(Component)]
-pub struct Dripping {
-    pub timer: Timer,
-}
-
-struct SafeInsertDripping {
-    entity: Entity,
-    dripping: Dripping,
-}
-
-impl Command for SafeInsertDripping {
-    fn apply(self, world: &mut World) {
-        if let Ok(mut entity_mut) = world.get_entity_mut(self.entity) {
-            entity_mut.insert(self.dripping);
-        }
-    }
-}
-
-#[derive(Resource)]
-pub struct ReflectionTarget {
-    pub image: Handle<Image>,
-}
 impl Plugin for WaterPlugin {
     fn build(&self, app: &mut App) {
         app.add_message::<WaterImpulseEvent>();
@@ -60,7 +30,6 @@ impl Plugin for WaterPlugin {
                     update_water_material,
                     animate_water_mesh,
                     entity_water_interaction,
-                    update_dripping,
                 ),
                 (
                     handle_water_l_key,
@@ -68,17 +37,8 @@ impl Plugin for WaterPlugin {
                     apply_buoyancy,
                     boat_ai,
                 ),
-            )
-                .run_if(in_state(crate::GameState::InGame)),
-        )
-        .add_systems(
-            Update,
-            (sync_reflection_camera, update_water_material)
-                .after(crate::player::camera::player_move)
-                .after(crate::player::camera::player_look)
-                .run_if(in_state(crate::GameState::InGame)),
-        )
-        .add_systems(OnExit(crate::GameState::InGame), cleanup_water);
+            ),
+        );
     }
 }
 
@@ -111,7 +71,6 @@ pub struct WaterSimData {
     pub last_disturbed_pos: Option<(usize, usize)>,
     pub size: f32, // World width/depth of the simulation plane
     pub grid_len: usize,
-    pub dirty: bool,
 }
 
 impl WaterSimData {
@@ -125,7 +84,6 @@ impl WaterSimData {
             last_disturbed_pos: None,
             size,
             grid_len,
-            dirty: true,
         };
 
         // Setup default borders as walls
@@ -203,15 +161,6 @@ pub struct WaterMaterial {
     pub water_level: f32,
     #[uniform(0)]
     pub grid_scale: f32,
-    #[uniform(0)]
-    pub cloudiness: f32, // NEW
-
-    #[texture(1)]
-    #[sampler(2)]
-    pub reflection_texture: Option<Handle<Image>>,
-
-    #[storage(3, read_only, visibility(vertex, fragment))]
-    pub height_buffer: Handle<ShaderStorageBuffer>,
 }
 
 impl WaterMaterial {
@@ -224,18 +173,11 @@ impl WaterMaterial {
             resolution: Vec2::new(1920.0, 1080.0),
             water_level: 15.0,
             grid_scale: 512.0 / WATER_GRID_SIZE as f32,
-            cloudiness: 0.0,
-            reflection_texture: None,
-            height_buffer: Handle::default(),
         }
     }
 }
 
 impl Material for WaterMaterial {
-    fn vertex_shader() -> ShaderRef {
-        "shaders/water_material.wgsl".into()
-    }
-
     fn fragment_shader() -> ShaderRef {
         "shaders/water_material.wgsl".into()
     }
@@ -299,79 +241,16 @@ fn setup_water(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut water_materials: ResMut<Assets<WaterMaterial>>,
-    mut images: ResMut<Assets<Image>>,
 ) {
     let size = 512.0;
     let grid_len = WATER_GRID_SIZE as usize;
-    let _size_f = size;
-
-    // Create half-resolution reflection render target
-    let extent = Extent3d {
-        width: 960,
-        height: 540,
-        depth_or_array_layers: 1,
-    };
-    let mut reflection_image = Image {
-        texture_descriptor: TextureDescriptor {
-            label: Some("water_reflection"),
-            size: extent,
-            dimension: TextureDimension::D2,
-            format: TextureFormat::Bgra8UnormSrgb,
-            mip_level_count: 1,
-            sample_count: 1,
-            usage: TextureUsages::TEXTURE_BINDING
-                | TextureUsages::COPY_DST
-                | TextureUsages::RENDER_ATTACHMENT,
-            view_formats: &[],
-        },
-        ..default()
-    };
-    reflection_image.resize(extent);
-    let reflection_handle = images.add(reflection_image);
-    commands.insert_resource(ReflectionTarget {
-        image: reflection_handle.clone(),
-    });
-
-    // Spawn reflection camera that renders only non-water layer (0) into the image
-    commands.spawn((
-        Name::new("WaterReflectionCamera"),
-        ReflectionCamera,
-        Camera3d::default(),
-        Camera {
-            order: -1, // Render BEFORE main camera
-            invert_culling: true,
-            clear_color: ClearColorConfig::Default,
-            ..default()
-        },
-        RenderTarget::Image(reflection_handle.clone().into()),
-        Projection::Perspective(PerspectiveProjection {
-            fov: 90.0f32.to_radians(),
-            far: 2000.0,
-            near: 0.1,
-            ..default()
-        }),
-        Transform::default(),
-        RenderLayers::layer(0),
-    ));
 
     // Create high-fidelity water mesh
     let mesh_handle = meshes.add(create_water_mesh(size, grid_len));
 
-    // Setup beautiful custom translucent WaterMaterial with reflection texture
-    let material_handle = water_materials.add(WaterMaterial {
-        color: {
-            let c = Color::srgba(0.02, 0.32, 0.78, 0.26).to_linear();
-            Vec4::new(c.red, c.green, c.blue, c.alpha)
-        },
-        time: 0.0,
-        camera_position: Vec3::ZERO,
-        resolution: Vec2::new(1920.0, 1080.0),
-        water_level: 15.0,
-        grid_scale: 512.0 / WATER_GRID_SIZE as f32,
-        cloudiness: 0.0,
-        reflection_texture: Some(reflection_handle.clone()),
-        height_buffer: Handle::default(),
-    });
+    // Setup beautiful custom translucent WaterMaterial
+    let material_handle =
+        water_materials.add(WaterMaterial::new(Color::srgba(0.02, 0.32, 0.78, 0.78)));
 
     // Spawn the simulated water plane entity
     commands.spawn((
@@ -383,25 +262,14 @@ fn setup_water(
         WaterMesh {
             handle: mesh_handle,
         },
-        RenderLayers::layer(1),
     ));
-}
-
-fn cleanup_water(
-    mut commands: Commands,
-    q: Query<Entity, Or<(With<ReflectionCamera>, With<WaterSimData>, With<WaterMesh>)>>,
-) {
-    for e in &q {
-        // Bevy version compatibility: use plain despawn.
-        commands.entity(e).despawn();
-    }
 }
 
 #[allow(dead_code)]
 fn water_sim(time: Res<Time>, mut query: Query<&mut WaterSimData>) {
     let delta_time = time.delta_secs().min(0.03); // Cap dt to prevent wave explosions
     let gravity: f32 = 12.0;
-    let friction: f32 = 0.965; // Smooth damping coefficient - raised from 0.7 for beautiful, long-lived wave propagation!
+    let friction: f32 = 0.975; // Smooth damping coefficient - raised from 0.7 for beautiful, long-lived wave propagation!
 
     for mut water_data in query.iter_mut() {
         let grid_len = water_data.grid_len;
@@ -537,16 +405,8 @@ fn water_sim(time: Res<Time>, mut query: Query<&mut WaterSimData>) {
     }
 }
 
-#[allow(dead_code)]
-fn animate_water_mesh(
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut query: Query<(&WaterMesh, &mut WaterSimData)>,
-) {
-    for (water_mesh, mut water_data) in query.iter_mut() {
-        if !water_data.dirty {
-            continue;
-        }
-
+fn animate_water_mesh(mut meshes: ResMut<Assets<Mesh>>, query: Query<(&WaterMesh, &WaterSimData)>) {
+    for (water_mesh, water_data) in query.iter() {
         if let Some(mesh) = meshes.get_mut(&water_mesh.handle) {
             let grid_len = water_data.grid_len;
             let vertices_per_side = grid_len + 1;
@@ -605,170 +465,31 @@ fn animate_water_mesh(
                 }
             }
         }
-
-        water_data.dirty = false;
     }
 }
 
 fn update_water_material(
     time: Res<Time>,
-    player_q: Query<&Transform, With<Player>>,
-    pivot_q: Query<&Transform, (With<CameraPivot>, Without<Player>)>,
-    camera_q: Query<&Transform, (With<MainCamera>, Without<Player>, Without<CameraPivot>)>,
-    water_query: Query<(&Transform, &MeshMaterial3d<WaterMaterial>), With<WaterSimData>>,
+    camera_query: Query<&Transform, With<Camera3d>>,
     windows: Query<&Window>,
     mut water_materials: ResMut<Assets<WaterMaterial>>,
-    weather: Option<Res<super::weather::WeatherManager>>,
-    gpu_handles: Option<Res<WaterGpuHandles>>,
+    water_query: Query<&MeshMaterial3d<WaterMaterial>>,
 ) {
-    let Ok(player_transform) = player_q.single() else {
-        return;
-    };
-    let Ok(pivot_transform) = pivot_q.single() else {
-        return;
-    };
-    let Ok(camera_transform) = camera_q.single() else {
-        return;
-    };
-
-    let camera_position = player_transform.translation
-        + player_transform.rotation
-            * (pivot_transform.translation
-                + player_transform.rotation * camera_transform.translation);
-
+    let camera_position = camera_query
+        .single()
+        .map(|t| t.translation)
+        .unwrap_or(Vec3::ZERO);
     let resolution = windows
         .single()
-        .map(|w| Vec2::new(w.physical_width() as f32, w.physical_height() as f32))
+        .map(|w| Vec2::new(w.width(), w.height()))
         .unwrap_or(Vec2::new(1920.0, 1080.0));
 
-    let cloudiness = weather.map(|w| w.cloudiness).unwrap_or(0.0);
-
-    if let Some(handles) = &gpu_handles {
-        let height_buf_handle = handles.height_current.clone();
-        for (water_transform, mat_handle) in water_query.iter() {
-            if let Some(material) = water_materials.get_mut(&mat_handle.0) {
-                material.time = time.elapsed_secs();
-                material.camera_position = camera_position;
-                material.resolution = resolution;
-                material.cloudiness = cloudiness;
-                material.water_level = water_transform.translation.y;
-                material.height_buffer = height_buf_handle.clone();
-            }
+    for mat_handle in water_query.iter() {
+        if let Some(material) = water_materials.get_mut(&mat_handle.0) {
+            material.time = time.elapsed_secs();
+            material.camera_position = camera_position;
+            material.resolution = resolution;
         }
-    } else {
-        for (water_transform, mat_handle) in water_query.iter() {
-            if let Some(material) = water_materials.get_mut(&mat_handle.0) {
-                material.time = time.elapsed_secs();
-                material.camera_position = camera_position;
-                material.resolution = resolution;
-                material.cloudiness = cloudiness;
-                material.water_level = water_transform.translation.y;
-            }
-        }
-    }
-}
-
-fn sync_reflection_camera(
-    player_q: Query<&Transform, With<Player>>,
-    pivot_q: Query<&Transform, (With<CameraPivot>, Without<Player>)>,
-    main_camera_q: Query<
-        (&Transform, &Projection),
-        (With<MainCamera>, Without<Player>, Without<CameraPivot>),
-    >,
-    mut refl_camera_q: Query<
-        (&mut Transform, &mut Projection),
-        (
-            With<ReflectionCamera>,
-            Without<Player>,
-            Without<CameraPivot>,
-            Without<MainCamera>,
-        ),
-    >,
-    water_query: Query<
-        &Transform,
-        (
-            With<WaterSimData>,
-            Without<Player>,
-            Without<CameraPivot>,
-            Without<MainCamera>,
-            Without<ReflectionCamera>,
-        ),
-    >,
-    windows: Query<&Window>,
-    reflection_target: Res<ReflectionTarget>,
-    mut images: ResMut<Assets<Image>>,
-) {
-    let Ok(player_transform) = player_q.single() else {
-        return;
-    };
-    let Ok(pivot_transform) = pivot_q.single() else {
-        return;
-    };
-    let Ok((main_transform, main_proj)) = main_camera_q.single() else {
-        return;
-    };
-    let Ok((mut refl_transform, mut refl_proj)) = refl_camera_q.single_mut() else {
-        return;
-    };
-    let Ok(window) = windows.single() else { return };
-
-    // Dynamically resize reflection image to half resolution matching the window's aspect ratio
-    let width = (window.physical_width() / 2).max(1);
-    let height = (window.physical_height() / 2).max(1);
-    if let Some(image) = images.get_mut(&reflection_target.image)
-        && (image.texture_descriptor.size.width != width
-            || image.texture_descriptor.size.height != height)
-    {
-        let new_extent = Extent3d {
-            width,
-            height,
-            depth_or_array_layers: 1,
-        };
-        image.resize(new_extent);
-    }
-
-    let water_y = water_query
-        .iter()
-        .next()
-        .map(|t| t.translation.y)
-        .unwrap_or(15.1);
-
-    let main_global_rotation =
-        player_transform.rotation * pivot_transform.rotation * main_transform.rotation;
-    let main_global_translation = player_transform.translation
-        + player_transform.rotation
-            * (pivot_transform.translation
-                + player_transform.rotation * main_transform.translation);
-
-    // Mirrored camera Y position (exact mirror for perfect perspective alignment)
-    let refl_y = 2.0 * water_y - main_global_translation.y;
-    refl_transform.translation =
-        Vec3::new(main_global_translation.x, refl_y, main_global_translation.z);
-    refl_transform.scale = Vec3::ONE;
-
-    // Mathematically exact quaternion mirroring across the XZ plane: negate X and Z
-    refl_transform.rotation = Quat::from_xyzw(
-        -main_global_rotation.x,
-        main_global_rotation.y,
-        -main_global_rotation.z,
-        main_global_rotation.w,
-    );
-
-    *refl_proj = main_proj.clone();
-    if let Projection::Perspective(ref mut persp) = *refl_proj {
-        let main_y = main_global_translation.y;
-        if main_y > water_y {
-            // Dynamic standard near plane: Set the near plane distance to the vertical
-            // distance from the camera to the water surface. This clips out the pond bed
-            // and underwater terrain under the camera, but keeps the shore and sky.
-            // Since it is a standard near plane (perpendicular to the view direction),
-            // it is 100% stable and never causes any horizontal line or warping artifacts.
-            let d = water_y - refl_y;
-            persp.near = (d - 0.15).max(0.1);
-        } else {
-            persp.near = 0.1;
-        }
-        persp.near_clip_plane = Vec4::new(0.0, 0.0, -1.0, -persp.near);
     }
 }
 
@@ -897,15 +618,9 @@ fn center_water_on_player(
         water_data.flow_x = new_flow_x;
         water_data.flow_y = new_flow_y;
         water_data.wall_mask = new_wall_mask;
-        water_data.dirty = true;
 
         water_transform.translation.x = target_x;
         water_transform.translation.z = target_z;
-        if target_x >= 5000.0 {
-            water_transform.translation.y = -1000.0;
-        } else {
-            water_transform.translation.y = 15.1;
-        }
 
         // Sync the shifted data to the GPU buffers
         if let Some(handles) = &gpu_handles {
@@ -959,17 +674,10 @@ fn entity_water_interaction(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     time: Res<Time>,
-    mut interactors_query: Query<(
-        Entity,
-        &Transform,
-        Option<&PhysicsState>,
-        &mut WaterInteractor,
-        Option<&Health>,
-    )>,
+    mut interactors_query: Query<(&Transform, Option<&PhysicsState>, &mut WaterInteractor)>,
     water_query: Query<(&WaterSimData, &Transform), Without<WaterInteractor>>,
     mut params: ResMut<WaterSimParams>,
     mut impulse_writer: MessageWriter<WaterImpulseEvent>,
-    water_audio: Res<crate::player::camera::WaterAudio>,
     mut local_assets: Local<
         Option<(
             Handle<Mesh>,
@@ -983,13 +691,13 @@ fn entity_water_interaction(
             (
                 meshes.add(Cuboid::from_size(Vec3::ONE)),
                 materials.add(StandardMaterial {
-                    base_color: Color::srgba(0.92, 0.97, 1.0, 0.75),
+                    base_color: Color::srgba(0.88, 0.96, 1.0, 0.5),
                     alpha_mode: AlphaMode::Blend,
                     ..default()
                 }),
                 materials.add(StandardMaterial {
-                    base_color: Color::srgba(0.90, 0.96, 1.0, 0.80),
-                    emissive: LinearRgba::from(Color::srgb(0.05, 0.28, 0.45)).with_alpha(0.6),
+                    base_color: Color::srgba(0.88, 0.96, 1.0, 0.65),
+                    emissive: LinearRgba::from(Color::srgb(0.0, 0.25, 0.35)),
                     alpha_mode: AlphaMode::Blend,
                     ..default()
                 }),
@@ -997,22 +705,11 @@ fn entity_water_interaction(
         })
         .clone();
 
-    params.delta_time = time.delta_secs().min(0.03);
-    params.gravity = 28.0; // Increased from 9.8 to make waves propagate faster (less sluggish)
-    params.friction = 0.985; // Restored propagation (higher friction coef) to let waves travel further
     params.interactor_count = 0;
 
-    for (entity, entity_transform, opt_physics, mut interactor, opt_health) in
-        interactors_query.iter_mut()
-    {
+    for (entity_transform, opt_physics, mut interactor) in interactors_query.iter_mut() {
         if params.interactor_count >= 16 {
             break;
-        }
-
-        if let Some(health) = opt_health
-            && health.hp <= 0.0
-        {
-            continue;
         }
 
         let pos = entity_transform.translation;
@@ -1043,7 +740,8 @@ fn entity_water_interaction(
         let effective_mass = if interactor.is_player {
             interactor.mass
         } else {
-            interactor.mass.min(0.85)
+            // Cap NPC/animal mass effect to match the player or be slightly more subtle
+            interactor.mass.min(0.8)
         };
 
         let mut data = crate::world::water_gpu::WaterInteractorData::default();
@@ -1075,7 +773,7 @@ fn entity_water_interaction(
                         data.grid_x = grid_x;
                         data.grid_z = grid_z;
                         data.push_force =
-                            force * 160.0 * (1.0 + 0.35 * (time.elapsed_secs() * 32.0).sin());
+                            force * 60.0 * (1.0 + 0.35 * (time.elapsed_secs() * 32.0).sin());
                         data.push_radius = 6.0;
                         active = true;
 
@@ -1120,13 +818,12 @@ fn entity_water_interaction(
                         let wave_oscillation = (time.elapsed_secs() * 12.0).sin();
                         data.grid_x = grid_x;
                         data.grid_z = grid_z;
-                        // Improved wake strength for better reflections
                         data.swim_add_height = total_speed
                             * time.delta_secs()
-                            * 2.5
+                            * 1.5
                             * wave_oscillation
                             * effective_mass;
-                        data.swim_radius = 1.8 * effective_mass.powf(0.333); // Perfectly balanced swimming ripples
+                        data.swim_radius = 1.8 * effective_mass.powf(0.333);
                         active = true;
 
                         // Spawn gentle swimming foam / bubble splash particles
@@ -1134,7 +831,7 @@ fn entity_water_interaction(
                             let mut rng = rand::rng();
                             // Scale particle spawn rate by effective mass and horizontal speed
                             let particle_chance =
-                                0.09 * (total_speed / 2.0).min(1.0) * effective_mass.min(1.0);
+                                0.08 * (total_speed / 2.0).min(1.0) * effective_mass.min(1.0);
                             if rng.random_bool(particle_chance as f64) {
                                 let w_height = get_water_height(
                                     pos.x,
@@ -1142,7 +839,7 @@ fn entity_water_interaction(
                                     Vec2::new(center.x, center.z),
                                     water_data,
                                 );
-                                let p_pos = Vec3::new(pos.x, w_height + 0.06, pos.z)
+                                let p_pos = Vec3::new(pos.x, w_height + 0.05, pos.z)
                                     + Vec3::new(
                                         rng.random_range(-0.5..0.5),
                                         0.0,
@@ -1157,11 +854,11 @@ fn entity_water_interaction(
                                     Mesh3d(cube_mesh.clone()),
                                     MeshMaterial3d(foam_mat.clone()),
                                     Transform::from_translation(p_pos)
-                                        .with_scale(Vec3::splat(rng.random_range(0.05..0.13))),
+                                        .with_scale(Vec3::splat(rng.random_range(0.04..0.11))),
                                     crate::player::interaction::Particle {
                                         velocity: p_vel,
                                         lifetime: Timer::from_seconds(
-                                            rng.random_range(0.35..0.75),
+                                            rng.random_range(0.3..0.7),
                                             TimerMode::Once,
                                         ),
                                     },
@@ -1172,120 +869,60 @@ fn entity_water_interaction(
                 }
 
                 if crossed_surface
-                    && vertical_speed.abs() > 0.05
+                    && vertical_speed.abs() > 1.5
                     && interactor.last_position != Vec3::ZERO
                 {
-                    let is_entering = vertical_speed < 0.0;
-
-                    let impact_force = if is_entering {
-                        (vertical_speed.abs() / 15.0).clamp(0.4, 2.0) * effective_mass
+                    let impact_force =
+                        (vertical_speed.abs() / 15.0).clamp(0.2, 1.5) * effective_mass;
+                    let force = if vertical_speed < 0.0 {
+                        impact_force * 40.0
                     } else {
-                        (vertical_speed.abs() / 15.0).clamp(0.2, 1.2) * effective_mass
-                    };
-
-                    let force = if is_entering {
-                        impact_force * 160.0
-                    } else {
-                        -impact_force * 120.0
+                        -impact_force * 30.0
                     };
 
                     impulse_writer.write(WaterImpulseEvent {
                         position: pos,
                         force,
-                        radius: 5.0 * effective_mass.powf(0.333), // Restored jumping/splashing radius
+                        radius: 3.5 * effective_mass.powf(0.333),
                     });
 
-                    // Trigger sound on surface crossing
-                    if interactor.is_player {
-                        commands.spawn(AudioPlayer::new(water_audio.splash_sound.clone()));
-                    }
-
                     let mut rng = rand::rng();
-
-                    if is_entering {
-                        // Strong Entry Splash
-                        let particle_count = (impact_force * 32.0) as usize;
-                        for _ in 0..particle_count.clamp(20, 50) {
-                            let w_height = get_water_height(
-                                pos.x,
-                                pos.z,
-                                Vec2::new(center.x, center.z),
-                                water_data,
+                    // Instant splash burst since we only run exactly on the surface crossing frame
+                    let particle_count = (impact_force * 20.0) as usize;
+                    for _ in 0..particle_count.clamp(10, 40) {
+                        let w_height = get_water_height(
+                            pos.x,
+                            pos.z,
+                            Vec2::new(center.x, center.z),
+                            water_data,
+                        );
+                        let angle = rng.random_range(0.0..std::f32::consts::TAU);
+                        let speed = rng.random_range(1.5..5.0) * impact_force;
+                        let p_vel = Vec3::new(
+                            angle.cos() * speed,
+                            rng.random_range(2.0..6.0) * impact_force,
+                            angle.sin() * speed,
+                        );
+                        let p_pos = Vec3::new(pos.x, w_height, pos.z)
+                            + Vec3::new(
+                                rng.random_range(-0.6..0.6),
+                                0.1,
+                                rng.random_range(-0.6..0.6),
                             );
-                            let angle = rng.random_range(0.0..std::f32::consts::TAU);
-                            let speed = rng.random_range(2.0..6.5) * impact_force;
-                            let p_vel = Vec3::new(
-                                angle.cos() * speed,
-                                rng.random_range(3.0..8.5) * impact_force, // Higher Y velocity
-                                angle.sin() * speed,
-                            );
-                            let p_pos = Vec3::new(pos.x, w_height, pos.z)
-                                + Vec3::new(
-                                    rng.random_range(-0.6..0.6),
-                                    0.1,
-                                    rng.random_range(-0.6..0.6),
-                                );
 
-                            commands.spawn((
-                                Mesh3d(cube_mesh.clone()),
-                                MeshMaterial3d(glow_mat.clone()),
-                                Transform::from_translation(p_pos)
-                                    .with_scale(Vec3::splat(rng.random_range(0.08..0.18))),
-                                crate::player::interaction::Particle {
-                                    velocity: p_vel,
-                                    lifetime: Timer::from_seconds(
-                                        rng.random_range(0.4..1.2),
-                                        TimerMode::Once,
-                                    ),
-                                },
-                            ));
-                        }
-                    } else {
-                        // Exit the water: Trigger the Drip Drying effect safely!
-                        commands.queue(SafeInsertDripping {
-                            entity,
-                            dripping: Dripping {
-                                timer: Timer::from_seconds(4.2, TimerMode::Once),
+                        commands.spawn((
+                            Mesh3d(cube_mesh.clone()),
+                            MeshMaterial3d(glow_mat.clone()),
+                            Transform::from_translation(p_pos)
+                                .with_scale(Vec3::splat(rng.random_range(0.06..0.15))),
+                            crate::player::interaction::Particle {
+                                velocity: p_vel,
+                                lifetime: Timer::from_seconds(
+                                    rng.random_range(0.4..1.2),
+                                    TimerMode::Once,
+                                ),
                             },
-                        });
-
-                        // Spawn initial break-surface splash droplets falling down/outwards
-                        let particle_count = 16;
-                        for _ in 0..particle_count {
-                            let w_height = get_water_height(
-                                pos.x,
-                                pos.z,
-                                Vec2::new(center.x, center.z),
-                                water_data,
-                            );
-                            let angle = rng.random_range(0.0..std::f32::consts::TAU);
-                            let speed = rng.random_range(0.8..2.2);
-                            let p_vel = Vec3::new(
-                                angle.cos() * speed,
-                                rng.random_range(-1.5..2.5), // some fly up, some fall down
-                                angle.sin() * speed,
-                            );
-                            let p_pos = Vec3::new(pos.x, w_height + 0.15, pos.z)
-                                + Vec3::new(
-                                    rng.random_range(-0.4..0.4),
-                                    0.0,
-                                    rng.random_range(-0.4..0.4),
-                                );
-
-                            commands.spawn((
-                                Mesh3d(cube_mesh.clone()),
-                                MeshMaterial3d(foam_mat.clone()),
-                                Transform::from_translation(p_pos)
-                                    .with_scale(Vec3::splat(rng.random_range(0.05..0.11))),
-                                crate::player::interaction::Particle {
-                                    velocity: p_vel,
-                                    lifetime: Timer::from_seconds(
-                                        rng.random_range(0.35..0.8),
-                                        TimerMode::Once,
-                                    ),
-                                },
-                            ));
-                        }
+                        ));
                     }
                 }
             }
@@ -1365,7 +1002,6 @@ fn process_water_impulses(
     water_query: Query<(&WaterSimData, &Transform)>,
     mut params: ResMut<WaterSimParams>,
 ) {
-    params.impulse_count = 0;
     for event in events.read() {
         if params.impulse_count >= 8 {
             break;
@@ -1405,9 +1041,6 @@ pub fn get_water_height(
     grid_center: Vec2,
     water_sim: &WaterSimData,
 ) -> f32 {
-    if world_x >= 5000.0 {
-        return -1000.0;
-    }
     let half_size = water_sim.size * 0.5;
     let x_offset = world_x - (grid_center.x - half_size);
     let z_offset = world_z - (grid_center.y - half_size);
@@ -1497,65 +1130,6 @@ fn boat_ai(
         } else {
             // Gravity
             transform.translation.y -= 9.8 * dt;
-        }
-    }
-}
-
-fn update_dripping(
-    mut commands: Commands,
-    time: Res<Time>,
-    mut dripping_query: Query<(Entity, &Transform, &mut Dripping)>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-    mut local_drip_assets: Local<Option<(Handle<Mesh>, Handle<StandardMaterial>)>>,
-) {
-    let (drip_mesh, drip_mat) = local_drip_assets
-        .get_or_insert_with(|| {
-            (
-                meshes.add(Cuboid::from_size(Vec3::splat(0.065))),
-                materials.add(StandardMaterial {
-                    base_color: Color::srgba(0.55, 0.78, 0.95, 0.65),
-                    alpha_mode: AlphaMode::Blend,
-                    ..default()
-                }),
-            )
-        })
-        .clone();
-
-    let mut rng = rand::rng();
-
-    for (entity, transform, mut dripping) in dripping_query.iter_mut() {
-        dripping.timer.tick(time.delta());
-        if dripping.timer.just_finished() {
-            commands.entity(entity).remove::<Dripping>();
-        } else {
-            // Spawn dripping droplets falling from the body (1-2 droplets per frame)
-            let spawn_count = rng.random_range(1..=2);
-            for _ in 0..spawn_count {
-                let p_pos = transform.translation
-                    + Vec3::new(
-                        rng.random_range(-0.35..0.35),
-                        rng.random_range(-0.3..1.1),
-                        rng.random_range(-0.35..0.35),
-                    );
-                let p_vel = Vec3::new(
-                    rng.random_range(-0.1..0.1),
-                    rng.random_range(-3.8..-1.8),
-                    rng.random_range(-0.1..0.1),
-                );
-                commands.spawn((
-                    Mesh3d(drip_mesh.clone()),
-                    MeshMaterial3d(drip_mat.clone()),
-                    Transform::from_translation(p_pos),
-                    crate::player::interaction::Particle {
-                        velocity: p_vel,
-                        lifetime: Timer::from_seconds(
-                            rng.random_range(0.35..0.72),
-                            TimerMode::Once,
-                        ),
-                    },
-                ));
-            }
         }
     }
 }

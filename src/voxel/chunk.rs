@@ -104,6 +104,13 @@ pub enum BlockType {
     SlopeCorner,
     SlopeValley,
     ProceduralWall,
+
+    // Alien Blocks
+    AlienStone,
+    AlienDirt,
+    GlowingMoss,
+    AlienCrystal,
+    FloatingCrystal,
 }
 
 impl From<u8> for BlockType {
@@ -111,7 +118,7 @@ impl From<u8> for BlockType {
         // Use a safe transmute-like mapping or a match
         // Because the enum has [repr(u8)] or default repr, we can map it
         // A robust match is better
-        unsafe { std::mem::transmute(value.min(BlockType::ProceduralWall as u8)) }
+        unsafe { std::mem::transmute(value.min(BlockType::FloatingCrystal as u8)) }
     }
 }
 
@@ -162,7 +169,7 @@ impl Default for BlockRegistry {
 
 pub fn build_block_registry() -> BlockRegistry {
     let mut registry = BlockRegistry {
-        props: HashMap::with_capacity(64),
+        props: HashMap::with_capacity(80),
     };
 
     // === TERRAIN ===
@@ -321,6 +328,110 @@ pub fn build_block_registry() -> BlockRegistry {
             ..DEFAULT_PROPS
         },
     );
+    // ========================================
+    // === ALIEN WORLD BLOCKS ===
+    // ========================================
+
+    registry.props.insert(
+        BlockType::AlienStone,
+        BlockProperties {
+            name: "Alien Stone",
+            voxel_size: IVec3::ONE,
+            density: 2800.0,
+            compressive_strength: 80.0,
+            ..DEFAULT_PROPS
+        },
+    );
+
+    registry.props.insert(
+        BlockType::AlienDirt,
+        BlockProperties {
+            name: "Alien Soil",
+            voxel_size: IVec3::ONE,
+            density: 1600.0,
+            compressive_strength: 8.0,
+            ..DEFAULT_PROPS
+        },
+    );
+
+    registry.props.insert(
+        BlockType::GlowingMoss,
+        BlockProperties {
+            name: "Glowing Moss",
+            voxel_size: IVec3::ONE,
+            density: 400.0,
+            is_vegetation: true,
+            ..DEFAULT_PROPS
+        },
+    );
+
+    registry.props.insert(
+        BlockType::AlienCrystal,
+        BlockProperties {
+            name: "Alien Crystal",
+            voxel_size: IVec3::ONE,
+            density: 3200.0,
+            is_transparent: true,
+            ..DEFAULT_PROPS
+        },
+    );
+
+    registry.props.insert(
+        BlockType::FloatingCrystal,
+        BlockProperties {
+            name: "Floating Crystal",
+            voxel_size: IVec3::ONE,
+            density: 1800.0,
+            is_transparent: true,
+            ..DEFAULT_PROPS
+        },
+    );
 
     registry
+}
+
+// ========================
+// ALIEN MATERIALS
+// ========================
+
+#[derive(Resource)]
+pub struct AlienMaterials {
+    pub alien_stone: Handle<StandardMaterial>,
+    pub alien_dirt: Handle<StandardMaterial>,
+    pub glowing_moss: Handle<StandardMaterial>,
+    pub alien_crystal: Handle<StandardMaterial>,
+    pub floating_crystal: Handle<StandardMaterial>,
+}
+
+pub fn build_alien_block_materials(materials: &mut Assets<StandardMaterial>) -> AlienMaterials {
+    AlienMaterials {
+        alien_stone: materials.add(StandardMaterial {
+            base_color: Color::srgb(0.32, 0.25, 0.48),
+            ..default()
+        }),
+
+        alien_dirt: materials.add(StandardMaterial {
+            base_color: Color::srgb(0.38, 0.28, 0.42),
+            ..default()
+        }),
+
+        glowing_moss: materials.add(StandardMaterial {
+            base_color: Color::srgb(0.12, 0.75, 0.35),
+            emissive: LinearRgba::new(0.8, 2.8, 1.6, 1.0), // Correct type
+            ..default()
+        }),
+
+        alien_crystal: materials.add(StandardMaterial {
+            base_color: Color::srgb(0.55, 0.85, 1.0),
+            emissive: LinearRgba::new(1.6, 3.6, 6.4, 1.0),
+            alpha_mode: AlphaMode::Blend,
+            ..default()
+        }),
+
+        floating_crystal: materials.add(StandardMaterial {
+            base_color: Color::srgb(0.85, 0.55, 1.0),
+            emissive: LinearRgba::new(4.4, 2.4, 7.6, 1.0),
+            ..default()
+        }),
+    }
 }

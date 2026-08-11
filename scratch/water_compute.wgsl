@@ -249,7 +249,7 @@ fn water_height_pass(@builtin(global_invocation_id) global_id: vec3<u32>) {
     new_height += height_change * params.delta_time;
     new_height = max(new_height, 0.1);
 
-    // === Apply impulses ===
+    // Apply impulse height changes (e.g. mouse clicks or block breaks)
     for (var i = 0u; i < params.impulse_count; i++) {
         let impulse = params.impulses[i];
         if (impulse.force != 0.0) {
@@ -257,9 +257,12 @@ fn water_height_pass(@builtin(global_invocation_id) global_id: vec3<u32>) {
             let dy = f32(y) - impulse.grid_z;
             let dist = sqrt(dx * dx + dy * dy);
             
+            // For block breaking underwater (void filling), we pull water height down directly!
+            // Or for mouse clicks we push it up
             if (dist < impulse.radius) {
+                // If impulse.force is negative, it's a void fill, we drop height directly!
                 if (impulse.force < 0.0) {
-                    new_height = max(0.2, new_height + impulse.force * 0.1);
+                    new_height = max(0.2, new_height + impulse.force * 0.1); // Force is huge (e.g. -40), scale it down
                 } else {
                     new_height += impulse.force * 0.1;
                 }
@@ -267,7 +270,7 @@ fn water_height_pass(@builtin(global_invocation_id) global_id: vec3<u32>) {
         }
     }
 
-    // === Interactor depression (animals/players) ===
+    // Apply interactor rocket depression exactly like CPU
     for (var i = 0u; i < params.interactor_count; i++) {
         let interactor = params.interactors[i];
         if (interactor.push_force != 0.0) {
@@ -275,17 +278,14 @@ fn water_height_pass(@builtin(global_invocation_id) global_id: vec3<u32>) {
             let dy = f32(y) - interactor.grid_z;
             let dist = sqrt(dx * dx + dy * dy);
             
-            if (dist < 0.5) {
-                let displacement = (interactor.push_force / 60.0) * 0.28 * params.delta_time;
+            if (dist < 0.5) { // Only affect center cell exactly
+                let displacement = (interactor.push_force / 60.0) * 0.28 * params.delta_time; // Reversing the 60 multiplier to get raw force
                 new_height = max(0.2, new_height - displacement);
             }
         }
     }
 
-    // === NEW: Gentle damping + clamping (highly recommended) ===
-    // Prevents slow buildup of noise and keeps waves believable
-    new_height = mix(new_height, 1.0, 0.016 * params.delta_time * 60.0);
-    new_height = clamp(new_height, 0.05, 4.5);
-
+    // Swim ripple moved to flow pass to create proper V-wakes!
+    
     height_next[idx] = new_height;
 }

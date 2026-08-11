@@ -1,9 +1,13 @@
+use crate::entities::CreatureData;
+use crate::entities::animals::Animal;
+use crate::entities::npc::NPC;
 use crate::player::camera::{CameraMode, Player};
 use crate::player::interaction::Inventory;
 use crate::ui::UiState;
 use crate::voxel::BlockType;
 use crate::world::noise_generator::NoiseGenerator;
 use crate::world::tree_generator::TreeEntity;
+use crate::world::water::MainCamera;
 use bevy::ecs::system::SystemParam;
 use bevy::math::primitives::Capsule3d;
 use bevy::prelude::*;
@@ -114,6 +118,7 @@ pub struct GunSounds {
     pub rifle_shoot: Handle<AudioSource>,
     pub sniper_shoot: Handle<AudioSource>,
     pub reload: Handle<AudioSource>,
+    pub sniper_reload: Handle<AudioSource>,
 }
 
 #[derive(Resource, Clone, serde::Serialize, serde::Deserialize)]
@@ -156,6 +161,7 @@ fn setup_combat_audio(mut commands: Commands, asset_server: Res<AssetServer>) {
         rifle_shoot: asset_server.load("rifle_shoot.wav"),
         sniper_shoot: asset_server.load("sniper_shoot.wav"),
         reload: asset_server.load("gun_reload.wav"),
+        sniper_reload: asset_server.load("sniper_reload.wav"),
     });
 }
 
@@ -198,6 +204,8 @@ pub enum WeaponState {
 pub struct Projectile {
     pub velocity: Vec3,
     pub damage: f32,
+    pub weapon_type: WeaponState,
+    pub spawn_pos: Vec3,
     pub lifetime: Timer,
     pub gravity_scale: f32,
 }
@@ -217,6 +225,23 @@ pub struct Hittable;
 /// Pending damage marker
 #[derive(Component)]
 pub struct DamageEvent(pub f32);
+
+#[derive(Component)]
+pub struct TornadoDamaged;
+
+/// A command to safely insert a component onto an entity, ignoring if the entity has been despawned.
+pub struct SafeInsert<T: Component> {
+    pub entity: Entity,
+    pub component: T,
+}
+
+impl<T: Component> bevy::ecs::system::Command for SafeInsert<T> {
+    fn apply(self, world: &mut World) {
+        if let Ok(mut entity_mut) = world.get_entity_mut(self.entity) {
+            entity_mut.insert(self.component);
+        }
+    }
+}
 
 #[derive(Component)]
 pub struct TempMuzzleFlash(pub Timer);
@@ -408,7 +433,7 @@ fn fire_bow(
     weapon: Res<WeaponState>,
     mut inventory: ResMut<Inventory>,
     player_query: Query<&Transform, With<Player>>,
-    camera_query: Query<&GlobalTransform, With<Camera3d>>,
+    camera_query: Query<&GlobalTransform, With<MainCamera>>,
     ui_state: Res<UiState>,
     gamepads: Query<&Gamepad>,
     voxel_world: VoxelWorld<NoiseGenerator>,
@@ -468,6 +493,8 @@ fn fire_bow(
             Projectile {
                 velocity,
                 damage: 5.0,
+                weapon_type: WeaponState::Bow,
+                spawn_pos,
                 lifetime: Timer::from_seconds(5.0, TimerMode::Once),
                 gravity_scale: 1.0,
             },
@@ -479,7 +506,17 @@ fn projectile_update(
     mut commands: Commands,
     time: Res<Time>,
     mut projectiles: Query<(Entity, &mut Transform, &mut Projectile)>,
-    hittable_query: Query<(Entity, &GlobalTransform, &Health), With<Hittable>>,
+    hittable_query: Query<
+        (
+            Entity,
+            &GlobalTransform,
+            &Health,
+            Option<&NPC>,
+            Option<&Animal>,
+            Option<&CreatureData>,
+        ),
+        (With<Hittable>, Without<Player>),
+    >,
 ) {
     let dt = time.delta_secs();
     for (arrow_entity, mut arrow_transform, mut projectile) in projectiles.iter_mut() {
@@ -492,15 +529,99 @@ fn projectile_update(
         projectile.velocity.y -= 9.8 * projectile.gravity_scale * dt;
         arrow_transform.translation += projectile.velocity * dt;
 
-        for (target_entity, target_transform, _) in hittable_query.iter() {
-            // Increased hit radius to 2.0 to account for enemy height (origin is at their feet)
-            if arrow_transform
-                .translation
-                .distance(target_transform.translation())
-                < 2.0
-            {
+        let dist_travelled = arrow_transform.translation.distance(projectile.spawn_pos);
+
+        // Apply range damage falloff based on weapon type
+        let damage_mult = match projectile.weapon_type {
+            WeaponState::Pistol | WeaponState::Revolver => {
+                // Short-range weapons: effective up to 15m, linear drop to 40% damage at 30m
+                if dist_travelled < 15.0 {
+                    1.0
+                } else if dist_travelled < 30.0 {
+                    let t = (dist_travelled - 15.0) / 15.0;
+                    1.0 - t * 0.6
+                } else {
+                    0.4
+                }
+            }
+            WeaponState::Rifle => {
+                // Medium/long-range rifle: effective up to 35m, linear drop to 70% damage at 70m
+                if dist_travelled < 35.0 {
+                    1.0
+                } else if dist_travelled < 70.0 {
+                    let t = (dist_travelled - 35.0) / 35.0;
+                    1.0 - t * 0.3
+                } else {
+                    0.7
+                }
+            }
+            WeaponState::Sniper => {
+                // Long-range sniper: 100% damage at all ranges, zero falloff
+                1.0
+            }
+            _ => 1.0,
+        };
+        let mut active_damage = projectile.damage * damage_mult;
+
+        let end = arrow_transform.translation;
+        let start = end - projectile.velocity * dt;
+
+        for (target_entity, target_transform, _, npc_opt, animal_opt, creature_data_opt) in
+            hittable_query.iter()
+        {
+            let target_pos = target_transform.translation();
+
+            // Calculate segment closest point in 2D (XZ plane) to prevent bullet tunneling/teleportation
+            let segment_xz = Vec2::new(end.x - start.x, end.z - start.z);
+            let target_xz = Vec2::new(target_pos.x - start.x, target_pos.z - start.z);
+            let len_sq = segment_xz.length_squared();
+            let t = if len_sq > 0.0 {
+                (target_xz.dot(segment_xz) / len_sq).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+            let closest_xz = Vec2::new(start.x, start.z) + t * segment_xz;
+            let horizontal_dist = Vec2::new(target_pos.x, target_pos.z).distance(closest_xz);
+
+            // Interpolate the height (Y) at the point of closest approach
+            let bullet_y_at_closest = start.y + t * (end.y - start.y);
+            let height_diff = bullet_y_at_closest - target_pos.y;
+
+            let (radius, height, is_npc, is_animal) = if npc_opt.is_some() {
+                (0.50, 2.4, true, false)
+            } else if animal_opt.is_some() {
+                let size = creature_data_opt.map(|cd| cd.size).unwrap_or(1.0);
+                (size * 0.65, size * 1.4, false, true)
+            } else {
+                // Generic targets (trees, brick walls, etc.)
+                (1.2, 3.5, false, false)
+            };
+
+            if horizontal_dist <= radius && height_diff >= 0.0 && height_diff <= height {
+                // Headshot modifier for Villagers/NPCs
+                if is_npc && height_diff >= 1.8 {
+                    // Deals 2.5x base damage, which makes Pistol (15.0), Revolver (18.0),
+                    // and Rifle (20.0) all deal >= 37.5 damage, resulting in a one-shot kill (max HP is 25.0)
+                    active_damage *= 2.5;
+                }
+
+                // Up close pistol/revolver boost for animals (passive or aggressive)
+                if is_animal
+                    && dist_travelled < 10.0
+                    && (projectile.weapon_type == WeaponState::Pistol
+                        || projectile.weapon_type == WeaponState::Revolver)
+                {
+                    // Up-close handgun hits deal 3.5x damage to ensure they go down in one shot
+                    active_damage *= 3.5;
+                }
+
+                // Sniper rifle one-shot guarantee for animals
+                if is_animal && projectile.weapon_type == WeaponState::Sniper {
+                    active_damage = active_damage.max(100.0);
+                }
+
                 if let Ok(mut cmd) = commands.get_entity(target_entity) {
-                    cmd.insert(DamageEvent(projectile.damage));
+                    cmd.insert(DamageEvent(active_damage));
                 }
                 commands.entity(arrow_entity).despawn();
                 break;
@@ -525,6 +646,7 @@ fn health_death(
     for (entity, mut health, damage, is_player, mut opt_transform, is_tree) in query.iter_mut() {
         health.hp -= damage.0;
         commands.entity(entity).remove::<DamageEvent>();
+        commands.entity(entity).remove::<TornadoDamaged>();
 
         if health.hp <= 0.0 {
             if is_player.is_some() {
@@ -541,6 +663,7 @@ fn health_death(
                         "Tree chopped down! Gained 5 Wood. (Total: {})",
                         inventory.resources[&BlockType::Wood]
                     );
+                    commands.entity(entity).despawn_related::<Children>();
                     commands.entity(entity).despawn();
                 } else if let Some(ref mut transform) = opt_transform {
                     // Spawn a blood splash particle effect!
@@ -574,6 +697,7 @@ fn health_death(
                         fall_rotation,
                     });
                 } else {
+                    commands.entity(entity).despawn_related::<Children>();
                     commands.entity(entity).despawn();
                 }
             }
@@ -598,6 +722,7 @@ fn dying_update(
         transform.translation.y -= 0.4 * dt;
 
         if dying.timer.just_finished() {
+            commands.entity(entity).despawn_related::<Children>();
             commands.entity(entity).despawn();
         }
     }
@@ -608,7 +733,7 @@ fn weapon_model_sync(
     weapon: Res<WeaponState>,
     inventory: Res<Inventory>,
     model_query: Query<Entity, With<EquippedWeaponModel>>,
-    camera_query: Query<Entity, With<Camera3d>>,
+    camera_query: Query<Entity, With<MainCamera>>,
     arm_query: Query<(Entity, &crate::player::camera::PlayerArm)>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
@@ -954,8 +1079,8 @@ fn melee_attack(
     mut commands: Commands,
     mouse_input: Res<ButtonInput<MouseButton>>,
     weapon: Res<WeaponState>,
-    camera_query: Query<&GlobalTransform, With<Camera3d>>,
-    hittable_query: Query<(Entity, &GlobalTransform), With<Hittable>>,
+    camera_query: Query<&GlobalTransform, With<MainCamera>>,
+    hittable_query: Query<(Entity, &GlobalTransform), (With<Hittable>, Without<Player>)>,
     ui_state: Res<UiState>,
     gamepads: Query<&Gamepad>,
 ) {
@@ -1012,7 +1137,7 @@ pub fn fire_laser(
     mouse_input: Res<ButtonInput<MouseButton>>,
     weapon: Res<WeaponState>,
     player_query: Query<(&Transform, &CameraMode), (With<Player>, Without<LaserBeam>)>,
-    camera_query: Query<(&GlobalTransform, &Camera3d)>,
+    camera_query: Query<&GlobalTransform, With<MainCamera>>,
     mut voxel_world: VoxelWorld<NoiseGenerator>,
     mut hittable_query: Query<
         (Entity, &GlobalTransform, &mut Health),
@@ -1062,7 +1187,7 @@ pub fn fire_laser(
     }
 
     if let Ok((player_transform, camera_mode)) = player_query.single()
-        && let Ok((camera_transform, _)) = camera_query.single()
+        && let Ok(camera_transform) = camera_query.single()
     {
         let shoot_pos = camera_transform.translation();
         let forward = camera_transform.forward();
@@ -1212,7 +1337,7 @@ fn fire_guns(
     keys: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
     player_query: Query<(&Transform, &CameraMode), With<Player>>,
-    camera_query: Query<&GlobalTransform, With<Camera3d>>,
+    camera_query: Query<&GlobalTransform, With<MainCamera>>,
     ui_state: Res<UiState>,
     gamepads: Query<&Gamepad>,
     voxel_world: VoxelWorld<NoiseGenerator>,
@@ -1280,10 +1405,12 @@ fn fire_guns(
         if current_ammo < max_ammo {
             ammo.reload_timer = 1.5;
             ammo.reloading_weapon = Some(current_weapon);
-            commands.spawn((
-                AudioPlayer::new(gun_sounds.reload.clone()),
-                PlaybackSettings::DESPAWN,
-            ));
+            let reload_sound = if current_weapon == WeaponState::Sniper {
+                gun_sounds.sniper_reload.clone()
+            } else {
+                gun_sounds.reload.clone()
+            };
+            commands.spawn((AudioPlayer::new(reload_sound), PlaybackSettings::DESPAWN));
             return;
         }
     }
@@ -1340,10 +1467,12 @@ fn fire_guns(
         // Trigger auto-reload
         ammo.reload_timer = 1.5;
         ammo.reloading_weapon = Some(current_weapon);
-        commands.spawn((
-            AudioPlayer::new(gun_sounds.reload.clone()),
-            PlaybackSettings::DESPAWN,
-        ));
+        let reload_sound = if current_weapon == WeaponState::Sniper {
+            gun_sounds.sniper_reload.clone()
+        } else {
+            gun_sounds.reload.clone()
+        };
+        commands.spawn((AudioPlayer::new(reload_sound), PlaybackSettings::DESPAWN));
         return;
     }
 
@@ -1405,7 +1534,7 @@ fn fire_guns(
             ),
             WeaponState::Revolver => (
                 125.0,
-                28.0,
+                18.0,
                 2.8,
                 meshes.add(Capsule3d::new(0.018, 0.11)),
                 materials.add(StandardMaterial {
@@ -1420,7 +1549,7 @@ fn fire_guns(
             ),
             WeaponState::Rifle => (
                 160.0,
-                22.0,
+                20.0,
                 3.5,
                 meshes.add(Capsule3d::new(0.014, 0.14)),
                 materials.add(StandardMaterial {
@@ -1504,6 +1633,8 @@ fn fire_guns(
             Projectile {
                 velocity,
                 damage,
+                weapon_type: current_weapon,
+                spawn_pos,
                 lifetime: Timer::from_seconds(lifetime, TimerMode::Once),
                 gravity_scale: 0.05,
             },

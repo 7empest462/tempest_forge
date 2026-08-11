@@ -1,12 +1,70 @@
-#import bevy_pbr::forward_io::VertexOutput
+#import bevy_pbr::forward_io::{Vertex, VertexOutput}
 #import bevy_pbr::mesh_view_bindings::view
+#import bevy_pbr::mesh_functions as mesh_functions
+#import "shaders/sky_common.wgsl"::get_sky_color
 
-// Lighting data
-const LIGHT_POSITION: vec3<f32> = vec3<f32>(20.0, 30.0, -20.0);
-const LIGHT_COLOR: vec3<f32> = vec3<f32>(1.0, 0.85, 0.7);
-const LIGHT_INTENSITY: f32 = 50000.0;
+@group(3) @binding(3) var<storage, read> height_buffer: array<f32>;
 
-const PI: f32 = 3.141592;
+@vertex
+fn vertex(vertex: Vertex) -> VertexOutput {
+    var out: VertexOutput;
+
+    let gx = clamp(u32(vertex.uv.x * 255.0), 0u, 255u);
+    let gy = clamp(u32(vertex.uv.y * 255.0), 0u, 255u);
+    let idx = gx * 256u + gy;
+    let h = height_buffer[idx];
+    var local_position = vertex.position;
+    local_position.y = (h - 1.0) * 2.5; // 2.5x scale is perfect for 256x256 grid
+
+    // Calculate local normal from adjacent heights
+    let h_left = height_buffer[clamp(gx - 1u, 0u, 255u) * 256u + gy];
+    let h_right = height_buffer[clamp(gx + 1u, 0u, 255u) * 256u + gy];
+    let h_up = height_buffer[gx * 256u + clamp(gy - 1u, 0u, 255u)];
+    let h_down = height_buffer[gx * 256u + clamp(gy + 1u, 0u, 255u)];
+
+    let dx = (h_right - h_left) * 2.5 / 8.0;
+    let dy = (h_down - h_up) * 2.5 / 8.0;
+    let local_normal = normalize(vec3<f32>(-dx, 1.0, -dy));
+
+    let model = mesh_functions::get_world_from_local(vertex.instance_index);
+    
+    out.world_position = mesh_functions::mesh_position_local_to_world(
+        model,
+        vec4<f32>(local_position, 1.0)
+    );
+    
+    out.position = mesh_functions::mesh_position_local_to_clip(
+        model,
+        vec4<f32>(local_position, 1.0)
+    );
+
+    out.world_normal = mesh_functions::mesh_normal_local_to_world(
+        local_normal,
+        vertex.instance_index
+    );
+
+    out.uv = vertex.uv;
+
+    return out;
+}
+
+const LIGHT_POSITION: vec3<f32> = vec3<f32>(20.0, 35.0, -25.0);
+const LIGHT_COLOR: vec3<f32> = vec3<f32>(1.0, 0.94, 0.82);
+const SEA_BASE: vec3<f32> = vec3<f32>(0.015, 0.09, 0.18);
+const SEA_WATER_COLOR: vec3<f32> = vec3<f32>(0.10, 0.48, 0.85);
+const SEA_SPEED: f32 = 0.15;
+const SEA_FREQ: f32 = 0.22;
+const PI: f32 = 3.14159265359;
+
+// Wavelength-dependent absorption coefficients (per meter of depth)
+const ABSORPTION: vec3<f32> = vec3<f32>(0.45, 0.08, 0.04);
+
+const F0_WATER: f32 = 0.04;
+
+const OCTAVE_M: mat2x2<f32> = mat2x2<f32>(
+    vec2<f32>(1.6, 1.2),
+    vec2<f32>(-1.2, 1.6)
+);
 
 struct WaterMaterial {
     color: vec4<f32>,
@@ -15,80 +73,228 @@ struct WaterMaterial {
     resolution: vec2<f32>,
     water_level: f32,
     grid_scale: f32,
+    cloudiness: f32,
 };
 
 @group(3) @binding(0) var<uniform> material: WaterMaterial;
+@group(3) @binding(1) var reflection_texture: texture_2d<f32>;
+@group(3) @binding(2) var reflection_sampler: sampler;
 
-fn get_sky_color(rd: vec3<f32>) -> vec3<f32> {
-    let y = max(rd.y, 0.0);
-    // Gorgeous sky gradient from zenith deep blue to horizon warm cyan
-    let sky_zenith = vec3<f32>(0.05, 0.15, 0.4);
-    let sky_horizon = vec3<f32>(0.35, 0.65, 0.85);
-    return mix(sky_horizon, sky_zenith, pow(y, 0.6));
+// --- Noise ---
+
+fn hash(p: vec2<f32>) -> f32 {
+    return fract(sin(dot(p, vec2<f32>(127.1, 311.7))) * 43758.5453123);
 }
 
+fn noise(p: vec2<f32>) -> f32 {
+    let i = floor(p);
+    let f = fract(p);
+    let u = f * f * (3.0 - 2.0 * f);
+    return mix(
+        mix(hash(i), hash(i + vec2<f32>(1.0, 0.0)), u.x),
+        mix(hash(i + vec2<f32>(0.0, 1.0)), hash(i + vec2<f32>(1.0, 1.0)), u.x),
+        u.y
+    ) * 2.0 - 1.0;
+}
+
+// --- Enhanced Normal Map Perturbation ---
+
+fn get_wave_normal(world_pos: vec3<f32>, time: f32) -> vec3<f32> {
+    let base_uv = world_pos.xz * SEA_FREQ;
+    let t = time * SEA_SPEED;
+    var wave = vec2<f32>(0.0);
+    
+    // Paired opposing direction vectors to cancel out net flow, creating a bobbing pond instead of a flowing river
+    let dirs = array<vec2<f32>, 5>(
+        vec2<f32>(0.4, 0.3),
+        vec2<f32>(-0.4, -0.3),
+        vec2<f32>(-0.35, 0.35),
+        vec2<f32>(0.35, -0.35),
+        vec2<f32>(0.1, -0.1)
+    );
+
+    var uv = base_uv;
+    var freq = 1.0;
+    var amp = 0.20;
+
+    for (var i = 0; i < 5; i++) {
+        let n1 = noise(uv * freq + t * dirs[i]);
+        let n2 = noise(uv * freq * 1.38 - t * dirs[i]);
+        wave += vec2<f32>(n1, n2) * amp;
+        uv = OCTAVE_M * uv;
+        freq *= 1.80;
+        amp *= 0.35; // Faster decay for smoother wave details
+    }
+    // Much gentler slopes for extremely clean reflections
+    return normalize(vec3<f32>(wave.x * 0.4, 1.0, wave.y * 0.4));
+}
+
+// --- Caustics ---
+
+fn get_caustics(world_pos: vec3<f32>, time: f32) -> vec3<f32> {
+    let uv = world_pos.xz * 0.75;
+    let t = time * 0.45;
+
+    var intensity = 0.0;
+    intensity += noise(uv + t * vec2<f32>(1.2, 0.8)) * 0.7;
+    intensity += noise(uv * 2.3 - t * vec2<f32>(0.9, 1.4)) * 0.45;
+    intensity += noise(uv * 4.7 + t * vec2<f32>(1.6, -0.9)) * 0.25;
+
+    intensity = pow(max(0.0, intensity * 0.6 + 0.45), 3.6);
+
+    let depth_factor = smoothstep(6.0, 0.0, world_pos.y - material.water_level);
+    
+    return vec3<f32>(0.5, 0.9, 1.3) * intensity * depth_factor * 1.35;
+}
+
+// --- Lighting ---
+
 fn diffuse(n: vec3<f32>, l: vec3<f32>, p: f32) -> f32 {
-    return pow(dot(n, l) * 0.4 + 0.6, p);
+    return pow(max(dot(n, l) * 0.5 + 0.5, 0.0), p);
 }
 
 fn specular(n: vec3<f32>, l: vec3<f32>, e: vec3<f32>, s: f32) -> f32 {
     let nrm = (s + 8.0) / (PI * 8.0);
-    return pow(max(dot(reflect(-l, n), e), 0.0), s) * nrm;
+    return pow(max(dot(reflect(e, n), l), 0.0), s) * nrm;
 }
 
-fn get_normal_from_derivatives(world_normal: vec3<f32>, world_pos: vec3<f32>) -> vec3<f32> {
-    var normal = normalize(world_normal);
-    if normal.y < 0.0 {
-        normal = -normal;
-    }
-    return normal;
+// --- Core water color ---
+
+fn get_water_color(
+    p: vec3<f32>,
+    n: vec3<f32>,
+    l: vec3<f32>,
+    eye: vec3<f32>,
+    dist: vec3<f32>,
+    water_level: f32
+) -> vec3<f32> {
+
+    let cos_theta = max(dot(n, eye), 0.0);
+    let fresnel = F0_WATER + (1.0 - F0_WATER) * pow(1.0 - cos_theta, 5.0);
+
+    var reflected_color = get_sky_color(reflect(-eye, n));
+
+    // Flo-style wave-height-based color palette and shading
+    let height_factor = clamp((p.y - water_level + 0.4) / 0.8, 0.0, 1.0);
+    let water_deep = vec3<f32>(0.05, 0.15, 0.4);
+    let water_shallow = vec3<f32>(0.3, 0.8, 1.0);
+    let wave_base_color = mix(water_deep, water_shallow, height_factor);
+
+    let ndotl = max(dot(n, l), 0.0);
+    let lit_water = wave_base_color * (0.4 + 0.8 * ndotl);
+
+    let depth_darkening = smoothstep(0.0, 0.5, 1.0 - height_factor);
+    let flo_shaded_water = mix(lit_water, lit_water * 0.3, depth_darkening);
+
+    // Apply wavelength-dependent absorption to the Flo-shaded base
+    let depth = max(0.0, water_level - p.y + 1.0);
+    let absorbed = exp(-ABSORPTION * depth);
+    let refracted = flo_shaded_water * absorbed;
+
+    var color = refracted;
+
+    // SSS
+    let wave_height = p.y - water_level;
+    let sss_dot = pow(max(0.0, dot(l, -eye)), 4.0);
+    let sss_height = smoothstep(-0.2, 1.5, wave_height);
+    let sss_thin = smoothstep(2.0, 0.0, max(0.0, wave_height));
+    let sss_intensity = sss_dot * sss_height * sss_thin * 0.6;
+    let sss_color = vec3<f32>(0.08, 0.6, 0.55);
+    color += sss_color * sss_intensity;
+
+    let caustics = get_caustics(p, material.time);
+    color += caustics * (1.0 - fresnel) * 0.6;
+
+    let atten = max(1.0 - length(dist) * 0.000065, 0.0);
+    color *= atten;
+
+    let spec = specular(n, l, eye, 160.0);
+    color += LIGHT_COLOR * (spec * 1.25);
+
+    // Reduced shore foam (was blocking reflections)
+    let shore = smoothstep(0.0, 1.6, p.y - water_level + 0.8);
+    color = mix(color, vec3<f32>(0.96, 0.98, 1.0), shore * 0.18);  // Lowered from 0.38
+
+    let view_dist = length(dist);
+    let fog = 1.0 - exp(-view_dist * 0.0006);
+    let horizon_color = get_sky_color(vec3<f32>(0.0, 0.02, 0.0));
+    color = mix(color, horizon_color, fog);
+
+    return color;
 }
+
+// --- Normal extraction ---
+
+fn get_normal_from_mesh(world_normal: vec3<f32>) -> vec3<f32> {
+    var n = normalize(world_normal);
+    if (n.y < 0.0) { n = -n; }
+    return n;
+}
+
+// =====================
+// FRAGMENT ENTRY POINT
+// =====================
 
 @fragment
 fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     let world_pos = in.world_position.xyz;
-    
-    // Calculate view direction (from surface to camera)
     let eye_dir = normalize(material.camera_position - world_pos);
-    
-    // Light direction (normalized)
     let light_dir = normalize(LIGHT_POSITION);
+
+    var normal = get_normal_from_mesh(in.world_normal);
+    let wave_normal = get_wave_normal(world_pos, material.time);
+
+    let blend = 0.6 + 0.4 * (1.0 - abs(dot(eye_dir, vec3<f32>(0.0, 1.0, 0.0))));
+    normal = normalize(mix(normal, wave_normal, blend));
+
+    // Perspective-correct planar reflection mapping using wave-displaced height
+    let mirrored_pos = vec4<f32>(world_pos.x, 2.0 * material.water_level - world_pos.y, world_pos.z, 1.0);
+    let clip_refl = view.clip_from_world * mirrored_pos;
+    let ndc_refl = clip_refl.xy / clip_refl.w;
     
-    // Get normal from vertex data
-    let normal = get_normal_from_derivatives(in.world_normal, world_pos);
+    // Convert NDC to UV coordinates (WGPU Y is flipped)
+    var proj_uv = ndc_refl * vec2<f32>(0.5, -0.5) + vec2<f32>(0.5, 0.5);
     
-    // Enhanced water color variation - more noticeable depth changes
-    // Relative height factor (mesh base level is at y = 15.0)
-    let height_factor = (world_pos.y - material.water_level + 2.0) / 4.0;
+    // Distort UVs based on view-space normal for ripples
+    let view_normal = (view.view_from_world * vec4<f32>(normal, 0.0)).xyz;
+    let distortion = view_normal.xy * 0.007;
     
-    // Curated rich water color palette - Vivid Sapphire / Royal Blue
-    let water_deep = vec3<f32>(0.005, 0.05, 0.18);     // Deep rich navy/indigo
-    let water_shallow = vec3<f32>(0.02, 0.32, 0.78);   // Gorgeous vivid sapphire blue
+    // Keep the reflection upright (heads pointing towards the horizon)
+    let refl_uv = clamp(
+        vec2<f32>(proj_uv.x + distortion.x, proj_uv.y + distortion.y),
+        vec2<f32>(0.001, 0.001),
+        vec2<f32>(0.999, 0.999)
+    );
+    let scene_refl_sample = textureSample(reflection_texture, reflection_sampler, refl_uv);
+    let scene_reflection = scene_refl_sample.rgb;
+    let scene_alpha = scene_refl_sample.a;
     
-    let simple_water = mix(water_deep, water_shallow, clamp(height_factor, 0.0, 1.0));
-    
-    // Lighting with contrast
-    let ndotl = max(dot(normal, light_dir), 0.0);
-    let lit_water = simple_water * (0.4 + 0.8 * ndotl);
-    
-    // Depth-based darkening
-    let depth_darkening = smoothstep(0.0, 0.6, 1.0 - height_factor);
-    let darkened_water = mix(lit_water, lit_water * 0.25, depth_darkening);
-    
-    // Fresnel reflection
-    let fresnel = pow(1.0 - max(dot(normal, eye_dir), 0.0), 3.0);
-    let sky_color = get_sky_color(reflect(-eye_dir, normal));
-    
-    // Add subtle animated micro-waves using sine waves in shader
-    let uv_coords = world_pos.xz * 0.2;
-    let wave_osc = sin(uv_coords.x + material.time) * cos(uv_coords.y - material.time) * 0.05;
-    let final_fresnel = clamp(fresnel + wave_osc, 0.0, 0.9);
-    
-    var final_color = mix(darkened_water, sky_color, final_fresnel * 0.45);
-    
-    // Add sun specular highlights
-    let spec = specular(normal, light_dir, eye_dir, 120.0);
-    final_color = final_color + LIGHT_COLOR * spec * 1.2;
-    
-    return vec4<f32>(final_color, material.color.a);
+    let reflect_dir = reflect(-eye_dir, normal);
+    let base_sky = get_sky_color(reflect_dir);
+    let storm_sky = vec3<f32>(0.12, 0.14, 0.18) * (reflect_dir.y * 0.4 + 0.6);
+    var sky_reflection = mix(base_sky, storm_sky, material.cloudiness);
+
+    if (reflect_dir.y > 0.0) {
+        let sky_uv = reflect_dir.xz / (reflect_dir.y + 0.01);
+        let cloud_noise = noise(sky_uv * 1.5 + material.time * vec2<f32>(0.05, 0.03));
+        let cloud_mask = smoothstep(-0.15, 0.45, cloud_noise) * smoothstep(0.0, 0.08, reflect_dir.y) * material.cloudiness;
+        let c_color = vec3<f32>(0.85, 0.88, 0.92) * (1.0 - material.cloudiness * 0.48);
+        sky_reflection = mix(sky_reflection, c_color, cloud_mask * 0.72);
+    }
+
+    let reflected = mix(sky_reflection, scene_reflection, scene_alpha * 0.95);
+
+    let dist = material.camera_position - world_pos;
+
+    var water_color = get_water_color(
+        world_pos, normal, light_dir, eye_dir, dist, material.water_level
+    );
+
+    let cos_theta = max(dot(normal, eye_dir), 0.0);
+    let fresnel = F0_WATER + (1.0 - F0_WATER) * pow(1.0 - cos_theta, 5.0);
+    water_color = mix(water_color, reflected, fresnel);
+
+    let final_alpha = mix(material.color.a, 1.0, fresnel);
+
+    return vec4<f32>(water_color, final_alpha);
 }

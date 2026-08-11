@@ -89,6 +89,11 @@ pub fn setup_water_gpu_buffers(
     let grid_len = WATER_GRID_SIZE as usize;
     let grid_size = grid_len * grid_len;
 
+    info!(
+        "GPU water pipeline: setup complete with {}x{} grid",
+        WATER_GRID_SIZE, WATER_GRID_SIZE
+    );
+
     let height_data = vec![1.0f32; grid_size];
     let flow_data = vec![0.0f32; grid_size];
     let wall_data = vec![0u32; grid_size]; // 0 = water, 1 = wall
@@ -120,6 +125,7 @@ pub fn setup_water_gpu_buffers(
                 for mut water_data in query.iter_mut() {
                     if data.len() == water_data.height.len() {
                         water_data.height.copy_from_slice(data);
+                        water_data.dirty = true;
                     }
                 }
             },
@@ -260,9 +266,15 @@ impl Plugin for WaterComputePlugin {
 fn swap_water_buffers(
     handles: Option<ResMut<WaterGpuHandles>>,
     query: Query<Entity, With<Readback>>,
+    mut warned: Local<bool>,
 ) {
     if query.iter().count() == 0 {
-        info!("WARNING: No entity with Readback component found in Main World!");
+        if !*warned {
+            info!("WARNING: No entity with Readback component found in Main World!");
+            *warned = true;
+        }
+    } else {
+        *warned = false;
     }
 
     if let Some(mut handles) = handles {
@@ -307,6 +319,7 @@ fn queue_water_bind_group(
     gpu_handles: Option<Res<WaterGpuHandles>>,
     params: Option<Res<WaterSimParams>>,
     shader_buffers: Res<RenderAssets<GpuShaderStorageBuffer>>,
+    mut local_buffer: Local<Option<Buffer>>,
 ) {
     let (Some(handles), Some(params)) = (gpu_handles, params) else {
         return;
@@ -336,16 +349,18 @@ fn queue_water_bind_group(
         return;
     };
 
-    let params_buffer = render_device.create_buffer(&BufferDescriptor {
-        label: Some("water_params_buffer"),
-        size: std::mem::size_of::<WaterSimParams>() as u64,
-        usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
-        mapped_at_creation: false,
+    let params_buffer = local_buffer.get_or_insert_with(|| {
+        render_device.create_buffer(&BufferDescriptor {
+            label: Some("water_params_buffer"),
+            size: std::mem::size_of::<WaterSimParams>() as u64,
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        })
     });
 
     let mut encase_buffer = encase::UniformBuffer::new(Vec::new());
     encase_buffer.write(&*params).unwrap();
-    render_queue.write_buffer(&params_buffer, 0, &encase_buffer.into_inner());
+    render_queue.write_buffer(params_buffer, 0, &encase_buffer.into_inner());
 
     let bind_group = render_device.create_bind_group(
         Some("water_compute_bind_group"),
@@ -388,7 +403,7 @@ fn queue_water_bind_group(
 
     commands.insert_resource(WaterGpuBindGroups {
         bind_group,
-        params_buffer,
+        params_buffer: params_buffer.clone(),
     });
 }
 

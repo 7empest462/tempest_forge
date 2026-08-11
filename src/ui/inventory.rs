@@ -1,6 +1,6 @@
 use crate::player::combat::WeaponState;
 use crate::player::interaction::Inventory;
-use crate::ui::{EguiReady, UiState};
+use crate::ui::UiState;
 use crate::voxel::BlockType;
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
@@ -8,13 +8,13 @@ use bevy_egui::{EguiContexts, egui};
 /// Draw inventory panel (toggleable with 'I' key)
 pub fn draw_inventory_panel(
     mut contexts: EguiContexts,
-    ready: Res<EguiReady>,
+
     mut ui_state: ResMut<UiState>,
     mut inventory: ResMut<Inventory>,
-    _weapon: Res<WeaponState>,
+    _weapon_state: Res<WeaponState>,
     mut placement: ResMut<crate::player::interaction::PlacementState>,
 ) {
-    if !ready.0 || !ui_state.show_inventory {
+    if !ui_state.show_inventory {
         return;
     }
 
@@ -25,30 +25,35 @@ pub fn draw_inventory_panel(
     let mouse_pos = ctx.pointer_latest_pos();
 
     egui::Window::new("inventory_window")
-        .anchor(egui::Align2::LEFT_CENTER, [20.0, 0.0])
+        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
         .title_bar(false)
         .resizable(false)
-        .default_width(380.0)
+        .default_width(960.0)
+        .default_height(660.0)
         .frame(
             egui::Frame::window(&ctx.style())
-                .fill(egui::Color32::from_black_alpha(240))
+                .fill(egui::Color32::from_rgba_unmultiplied(16, 20, 30, 240))
                 .stroke(egui::Stroke::new(
-                    1.0,
-                    egui::Color32::from_rgb(100, 100, 100),
+                    2.0,
+                    egui::Color32::from_rgb(65, 105, 170),
                 ))
-                .corner_radius(10.0)
-                .inner_margin(15.0),
+                .corner_radius(16.0)
+                .inner_margin(24.0),
         )
         .show(ctx, |ui| {
+            // Header
             ui.vertical_centered(|ui| {
-                ui.add(egui::Label::new(
+                ui.heading(
                     egui::RichText::new("⚒ FORGE & INVENTORY")
-                        .font(egui::FontId::proportional(22.0))
-                        .color(egui::Color32::from_rgb(255, 180, 50))
+                        .size(32.0)
+                        .color(egui::Color32::from_rgb(100, 210, 255))
                         .strong(),
-                ));
+                );
             });
-            ui.add_space(10.0);
+
+            ui.add_space(15.0);
+            ui.separator();
+            ui.add_space(15.0);
 
             ui.group(|ui| {
                 ui.heading("📦 Resources");

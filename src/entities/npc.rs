@@ -1,6 +1,6 @@
 use crate::entities::{AIState, Creature, Species};
 use crate::player::camera::Player;
-use crate::player::combat::{DamageEvent, Health, Hittable};
+use crate::player::combat::{DamageEvent, Health, Hittable, TornadoDamaged};
 use crate::voxel::chunk::BlockType;
 use crate::world::env::TimeOfDay;
 use crate::world::manager::find_stable_ground_height as find_ground_height;
@@ -680,7 +680,13 @@ fn npc_ai(
     time: Res<Time>,
     time_of_day: Res<TimeOfDay>,
     mut commands: Commands,
-    mut npc_query: Query<(Entity, &mut NPC, &Transform, Option<&DamageEvent>)>,
+    mut npc_query: Query<(
+        Entity,
+        &mut NPC,
+        &Transform,
+        Option<&DamageEvent>,
+        Option<&TornadoDamaged>,
+    )>,
     creature_query: Query<(Entity, &Transform, &Creature), With<Health>>,
     spark_effect_res: Option<Res<crate::particle_effects::BlacksmithSparkEffect>>,
     player_query: Query<(Entity, &Transform), With<Player>>,
@@ -700,51 +706,55 @@ fn npc_ai(
     // Pre-collect active npc combat states to avoid borrow conflict
     let active_npc_combats: Vec<(Entity, Vec3, Option<Entity>)> = npc_query
         .iter()
-        .map(|(e, npc, t, _)| (e, t.translation, npc.attacker))
+        .map(|(e, npc, t, _, _)| (e, t.translation, npc.attacker))
         .collect();
 
-    for (entity, mut npc, transform, damage_event) in npc_query.iter_mut() {
+    for (entity, mut npc, transform, damage_event, tornado_damaged) in npc_query.iter_mut() {
         npc.timer -= time.delta_secs();
         npc.last_player_look -= time.delta_secs();
 
         // --- RETALIATIVE COMBAT / DEFENSIVE AI ---
         // If attacked (i.e. has a DamageEvent)
         if damage_event.is_some() {
-            // First check if there is a hostile monster nearby who could be the attacker
-            let mut closest_monster = None;
-            let mut closest_dist = 4.0; // Melee range for monsters
-            for (c_entity, c_trans, c_creature) in creature_query.iter() {
-                if matches!(
-                    c_creature.species,
-                    Species::Wolf
-                        | Species::Spider
-                        | Species::Skeleton
-                        | Species::Cyclops
-                        | Species::Triangaroo
-                ) {
-                    let d = transform.translation.distance(c_trans.translation);
-                    if d < closest_dist {
-                        closest_dist = d;
-                        closest_monster = Some(c_entity);
+            if tornado_damaged.is_some() {
+                // Damaged by the tornado, do not blame the player!
+            } else {
+                // First check if there is a hostile monster nearby who could be the attacker
+                let mut closest_monster = None;
+                let mut closest_dist = 4.0; // Melee range for monsters
+                for (c_entity, c_trans, c_creature) in creature_query.iter() {
+                    if matches!(
+                        c_creature.species,
+                        Species::Wolf
+                            | Species::Spider
+                            | Species::Skeleton
+                            | Species::Cyclops
+                            | Species::Triangaroo
+                    ) {
+                        let d = transform.translation.distance(c_trans.translation);
+                        if d < closest_dist {
+                            closest_dist = d;
+                            closest_monster = Some(c_entity);
+                        }
                     }
                 }
-            }
 
-            if let Some(monster) = closest_monster {
-                npc.attacker = Some(monster);
-                npc.state = AIState::Chasing;
-                npc.timer = 12.0; // Stay in combat mode
-                npc.path.clear();
-            } else if player_entity != Entity::PLACEHOLDER {
-                // If no monster is nearby, it must be the Player!
-                npc.attacker = Some(player_entity);
-                npc.state = AIState::Chasing;
-                npc.timer = 30.0; // 30 seconds of player anger cooldown!
-                npc.path.clear();
-                println!(
-                    "{:?} NPC got mad at the Player for attacking them!",
-                    npc.role
-                );
+                if let Some(monster) = closest_monster {
+                    npc.attacker = Some(monster);
+                    npc.state = AIState::Chasing;
+                    npc.timer = 12.0; // Stay in combat mode
+                    npc.path.clear();
+                } else if player_entity != Entity::PLACEHOLDER {
+                    // If no monster is nearby, it must be the Player!
+                    npc.attacker = Some(player_entity);
+                    npc.state = AIState::Chasing;
+                    npc.timer = 30.0; // 30 seconds of player anger cooldown!
+                    npc.path.clear();
+                    println!(
+                        "{:?} NPC got mad at the Player for attacking them!",
+                        npc.role
+                    );
+                }
             }
         }
 

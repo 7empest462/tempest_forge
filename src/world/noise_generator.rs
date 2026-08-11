@@ -10,15 +10,17 @@ use std::sync::Arc;
 pub struct TerrainData {
     pub height: f32,
     pub is_desert: bool,
-    pub _is_forest: bool,
+    pub is_forest: bool,
 }
 
 #[derive(Resource, Clone)]
 pub struct NoiseGenerator {
-    pub inner: Arc<NoiseGeneratorInner>,
+    pub inner: Arc<std::sync::RwLock<Arc<NoiseGeneratorInner>>>,
+    pub spawning_distance: u32,
 }
 
 pub struct NoiseGeneratorInner {
+    pub seed: u32,
     pub base_noise: FastNoise,
     pub detail_noise: FastNoise,
     pub cave_noise: FastNoise,
@@ -28,38 +30,63 @@ pub struct NoiseGeneratorInner {
     pub flora_noise: FastNoise,
 }
 
+// Fast FBM implementation using pre-seeded noise objects to avoid allocation on the fly
+fn fbm_noise_fast(x: f32, z: f32, noise1: &FastNoise, noise2: &FastNoise) -> f32 {
+    let mut value = 0.0;
+    value += 0.5 * noise1.get_noise(x, z);
+    value += 0.25 * noise2.get_noise(x * 2.0, z * 2.0);
+    value += 0.125 * noise1.get_noise(x * 4.0, z * 4.0);
+    value += 0.0625 * noise2.get_noise(x * 8.0, z * 8.0);
+    value
+}
+fn get_alien_height(x: f32, z: f32, inner: &NoiseGeneratorInner) -> f32 {
+    let nx = x * 0.025;
+    let nz = z * 0.025;
+
+    // Base terrain with sharp alien peaks
+    let base = fbm_noise_fast(nx, nz, &inner.base_noise, &inner.detail_noise) * 32.0;
+    let peaks = fbm_noise_fast(nx * 3.0, nz * 3.0, &inner.cave_noise, &inner.moisture_noise) * 20.0;
+
+    // Floating island bias
+    let islands =
+        (fbm_noise_fast(nx * 0.5, nz * 0.5, &inner.temp_noise, &inner.ore_noise) - 0.3) * 45.0;
+
+    base + peaks + islands.max(0.0) + 12.0 // Lowered to 12.0 to allow basins to go below sea level (15.0)
+}
+
 impl NoiseGenerator {
-    pub fn new() -> Self {
-        let mut base_noise = FastNoise::seeded(1337);
+    pub fn new(seed: u32, spawning_distance: u32) -> Self {
+        let mut base_noise = FastNoise::seeded(seed as u64);
         base_noise.set_noise_type(NoiseType::Perlin);
         base_noise.set_frequency(0.01);
 
-        let mut detail_noise = FastNoise::seeded(1337 + 1);
+        let mut detail_noise = FastNoise::seeded((seed + 1) as u64);
         detail_noise.set_noise_type(NoiseType::Perlin);
         detail_noise.set_frequency(0.05);
 
-        let mut cave_noise = FastNoise::seeded(1337 + 2);
+        let mut cave_noise = FastNoise::seeded((seed + 2) as u64);
         cave_noise.set_noise_type(NoiseType::Perlin);
-        cave_noise.set_frequency(0.02);
+        cave_noise.set_frequency(0.025);
 
-        let mut moisture_noise = FastNoise::seeded(1337 + 3);
+        let mut moisture_noise = FastNoise::seeded((seed + 3) as u64);
         moisture_noise.set_noise_type(NoiseType::Perlin);
         moisture_noise.set_frequency(0.002);
 
-        let mut temp_noise = FastNoise::seeded(1337 + 4);
+        let mut temp_noise = FastNoise::seeded((seed + 4) as u64);
         temp_noise.set_noise_type(NoiseType::Perlin);
         temp_noise.set_frequency(0.01);
 
-        let mut ore_noise = FastNoise::seeded(1337 + 5);
+        let mut ore_noise = FastNoise::seeded((seed + 5) as u64);
         ore_noise.set_noise_type(NoiseType::Perlin);
         ore_noise.set_frequency(0.1);
 
-        let mut flora_noise = FastNoise::seeded(1337 + 6);
+        let mut flora_noise = FastNoise::seeded((seed + 6) as u64);
         flora_noise.set_noise_type(NoiseType::Perlin);
         flora_noise.set_frequency(0.15);
 
         Self {
-            inner: Arc::new(NoiseGeneratorInner {
+            inner: Arc::new(std::sync::RwLock::new(Arc::new(NoiseGeneratorInner {
+                seed,
                 base_noise,
                 detail_noise,
                 cave_noise,
@@ -67,12 +94,25 @@ impl NoiseGenerator {
                 temp_noise,
                 ore_noise,
                 flora_noise,
-            }),
+            }))),
+            spawning_distance,
         }
     }
 
     pub fn get_terrain(&self, x: f32, z: f32) -> TerrainData {
-        let inner = &self.inner;
+        let inner_arc = self.inner.read().unwrap().clone();
+        let inner = &*inner_arc;
+
+        // Branch for Alien Dimension
+        if x >= 5000.0 {
+            let height = get_alien_height(x, z, inner);
+            return TerrainData {
+                height,
+                is_desert: false,
+                is_forest: false,
+            };
+        }
+
         let base = inner.base_noise.get_noise(x, z);
         let moisture_val = inner.moisture_noise.get_noise(x, z);
         let detail = inner.detail_noise.get_noise(x, z);
@@ -108,16 +148,22 @@ impl NoiseGenerator {
         TerrainData {
             height,
             is_desert,
-            _is_forest: is_forest,
+            is_forest,
         }
     }
 
     pub fn get_adjusted_surface_height(&self, x: f32, z: f32) -> f32 {
+        let inner_arc = self.inner.read().unwrap().clone();
+        let inner = &*inner_arc;
+        if x >= 5000.0 {
+            return get_alien_height(x, z, inner);
+        }
+
         let terrain = self.get_terrain(x, z);
-        let base = self.inner.base_noise.get_noise(x, z);
+        let base = inner.base_noise.get_noise(x, z);
 
         // River Carving (Ridged noise)
-        let river_val = self.inner.temp_noise.get_noise(x, z).abs();
+        let river_val = inner.temp_noise.get_noise(x, z).abs();
         let is_river = river_val < 0.05;
 
         let river_depth = if is_river {
@@ -134,21 +180,21 @@ impl NoiseGenerator {
     }
 
     pub fn get_cave(&self, x: f32, y: f32, z: f32) -> f32 {
-        self.inner.cave_noise.get_noise3d(x, y, z)
+        self.inner.read().unwrap().cave_noise.get_noise3d(x, y, z)
     }
 
     pub fn get_ore_vein(&self, x: f32, y: f32, z: f32) -> f32 {
-        self.inner.ore_noise.get_noise3d(x, y, z)
+        self.inner.read().unwrap().ore_noise.get_noise3d(x, y, z)
     }
 
     pub fn get_flora(&self, x: f32, z: f32) -> f32 {
-        self.inner.flora_noise.get_noise(x, z)
+        self.inner.read().unwrap().flora_noise.get_noise(x, z)
     }
 }
 
 impl Default for NoiseGenerator {
     fn default() -> Self {
-        Self::new()
+        Self::new(1337, 0)
     }
 }
 
@@ -157,7 +203,7 @@ impl VoxelWorldConfig for NoiseGenerator {
     type ChunkUserBundle = ();
 
     fn spawning_distance(&self) -> u32 {
-        14
+        self.spawning_distance
     }
 
     fn chunk_lod(&self, chunk_pos: IVec3, _prev_lod: Option<u8>, player_pos: Vec3) -> u8 {
@@ -202,7 +248,7 @@ impl VoxelWorldConfig for NoiseGenerator {
     }
 
     fn voxel_texture(&self) -> Option<(String, u32)> {
-        Some(("default_texture.png".into(), 13))
+        Some(("default_texture.png".into(), 14))
     }
 
     fn texture_index_mapper(&self) -> Arc<dyn Fn(Self::MaterialIndex) -> [u32; 3] + Send + Sync> {
@@ -222,10 +268,18 @@ impl VoxelWorldConfig for NoiseGenerator {
                 BlockType::Flower | BlockType::Fern | BlockType::Moss => [10, 10, 10],
                 BlockType::IronOre | BlockType::IronBlock => [11, 11, 11],
                 BlockType::GoldOre | BlockType::GoldBlock => [12, 12, 12],
-                BlockType::Brick => [3, 3, 3],      // Brown/Clay
-                BlockType::Concrete => [6, 6, 6],   // Dark Gray
-                BlockType::WoodPlanks => [8, 8, 8], // Wood
-                BlockType::Glass => [4, 4, 4],      // Stone-like frame for now
+                BlockType::Brick => [3, 3, 3],
+                BlockType::Concrete => [6, 6, 6],
+                BlockType::WoodPlanks => [8, 8, 8],
+                BlockType::Glass => [13, 13, 13],
+
+                // Alien Blocks (indices 14 to 18 in the 19-layer array)
+                BlockType::AlienStone => [14, 14, 14],
+                BlockType::AlienDirt => [15, 15, 15],
+                BlockType::GlowingMoss => [16, 16, 16],
+                BlockType::AlienCrystal => [17, 17, 17],
+                BlockType::FloatingCrystal => [18, 18, 18],
+
                 _ => [4, 4, 4],
             }
         })
@@ -234,11 +288,73 @@ impl VoxelWorldConfig for NoiseGenerator {
     fn voxel_lookup_delegate(&self) -> VoxelLookupDelegate<Self::MaterialIndex> {
         let generator = self.clone();
         Box::new(move |_chunk_pos, _lod, _prev_chunk| {
+            let inner_arc = generator.inner.read().unwrap().clone();
             let gen_ref = generator.clone();
             Box::new(move |pos, _prev_voxel| {
                 let x = pos.x as f32;
                 let y = pos.y as f32;
                 let z = pos.z as f32;
+
+                let inner = &*inner_arc;
+
+                // 1. Alien Portal structure
+                if x >= 5000.0 {
+                    let dx = (x - 10000.0).abs();
+                    let dz = (z - 10050.0).abs();
+                    if dx < 2.5 && dz < 0.5 {
+                        let portal_y = get_alien_height(10000.0, 10050.0, inner).round();
+                        let dy = y - portal_y;
+                        if (0.0..=5.0).contains(&dy) {
+                            if dx > 0.5 || dy == 5.0 {
+                                return WorldVoxel::Solid(BlockType::FloatingCrystal as u8);
+                            } else {
+                                return WorldVoxel::Air;
+                            }
+                        }
+                    }
+                } else {
+                    // Normal Portal structure
+                    let dx = x.abs();
+                    let dz = (z - 50.0).abs();
+                    if dx < 2.5 && dz < 0.5 {
+                        let dy = y - 42.0;
+                        if (0.0..=5.0).contains(&dy) {
+                            if dx > 0.5 || dy == 5.0 {
+                                return WorldVoxel::Solid(BlockType::FloatingCrystal as u8);
+                            } else {
+                                return WorldVoxel::Air;
+                            }
+                        }
+                    }
+                }
+
+                // Branch for Alien Dimension
+                if x >= 5000.0 {
+                    let adjusted_surface = get_alien_height(x, z, inner);
+                    if y >= 30.0 {
+                        // Floating islands in the sky
+                        let island_noise = fbm_noise_fast(
+                            x * 0.035,
+                            z * 0.035,
+                            &inner.temp_noise,
+                            &inner.ore_noise,
+                        );
+                        if island_noise > 0.32 && y <= 45.0 {
+                            return WorldVoxel::Solid(BlockType::FloatingCrystal as u8);
+                        }
+                        return WorldVoxel::Air;
+                    }
+
+                    if y < adjusted_surface - 6.0 {
+                        return WorldVoxel::Solid(BlockType::AlienStone as u8); // Deep rock
+                    } else if y < adjusted_surface - 1.0 {
+                        return WorldVoxel::Solid(BlockType::AlienDirt as u8); // Middle sediment
+                    } else if y < adjusted_surface {
+                        return WorldVoxel::Solid(BlockType::GlowingMoss as u8); // Top green moss / grass
+                    } else {
+                        return WorldVoxel::Air;
+                    }
+                }
 
                 let terrain = gen_ref.get_terrain(x, z);
                 let adjusted_surface = gen_ref.get_adjusted_surface_height(x, z);
@@ -271,16 +387,19 @@ impl VoxelWorldConfig for NoiseGenerator {
                 // 2. Geological Layers (Depth based)
                 let depth = adjusted_surface - y;
 
-                // Cave System (Deeper and more structured)
-                let cave_val = gen_ref.get_cave(x * 0.04, y * 0.08, z * 0.04).abs();
-                if cave_val < 0.06 && depth > 25.0 {
+                // Cave System (winding tunnels with surface entrances)
+                let cave_val = gen_ref.get_cave(x, y, z).abs();
+                // Gradually increase cave size with depth, starting with narrow entrances at the surface
+                let t = (depth / 20.0).clamp(0.0, 1.0);
+                let cave_threshold = 0.035 + (0.08 - 0.035) * t;
+                if cave_val < cave_threshold && depth > 2.0 {
                     return WorldVoxel::Air;
                 }
 
-                // Ore Veins
+                // Ore Veins (Iron and Gold, exposed on cave walls and shallow underground)
                 let ore_val = gen_ref.get_ore_vein(x * 0.1, y * 0.1, z * 0.1);
-                if ore_val > 0.8 && depth > 10.0 {
-                    if depth < 40.0 {
+                if ore_val > 0.65 && depth > 8.0 {
+                    if depth < 35.0 {
                         return WorldVoxel::Solid(BlockType::IronOre as u8);
                     } else {
                         return WorldVoxel::Solid(BlockType::GoldOre as u8);

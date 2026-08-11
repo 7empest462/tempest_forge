@@ -89,6 +89,14 @@ pub fn chunk_vegetation_system(
     noise_gen: Res<NoiseGenerator>,
     registry: Res<SettlementRegistry>,
 ) {
+    let undecorated_count = query.iter().count();
+    if undecorated_count > 0 {
+        trace!(
+            "[VEGETATION] chunk_vegetation_system: processing {} undecorated chunks",
+            undecorated_count
+        );
+    }
+
     for (entity, chunk_comp) in query.iter() {
         let chunk_key = chunk_comp.position;
 
@@ -96,6 +104,13 @@ pub fn chunk_vegetation_system(
         let chunk_hash =
             (chunk_key.x.wrapping_mul(73856093) ^ chunk_key.z.wrapping_mul(19349663)).abs();
         let is_settlement_chunk = (chunk_hash % 10) == 0 && (chunk_key.x != 0 || chunk_key.z != 0);
+
+        if chunk_key.x >= 312 {
+            info!(
+                "[VEGETATION] Processing alien chunk {:?} is_settlement_chunk={}",
+                chunk_key, is_settlement_chunk
+            );
+        }
 
         let mut spawn_count = 0;
         let mut rng = FastRng::with_seed((chunk_key.x as u64) << 32 | (chunk_key.z as u64));
@@ -126,6 +141,12 @@ pub fn chunk_vegetation_system(
             let surface_y = adjusted_surface.floor() as i32;
             let chunk_y = (surface_y as f32 / 16.0).floor() as i32;
             if chunk_y != chunk_key.y {
+                if chunk_key.x >= 312 && i == 0 {
+                    info!(
+                        "[VEGETATION] Alien chunk skip: chunk_y={} != chunk_key.y={} (surface_y={})",
+                        chunk_y, chunk_key.y, surface_y
+                    );
+                }
                 continue;
             }
 
@@ -145,10 +166,16 @@ pub fn chunk_vegetation_system(
             };
 
             if i >= density_limit {
+                if chunk_key.x >= 312 && i == 0 {
+                    info!(
+                        "[VEGETATION] Alien chunk skip: i={} >= density_limit={} (flora_val={:.3})",
+                        i, density_limit, flora_val
+                    );
+                }
                 continue;
             }
-
-            if adjusted_surface > 16.0 && adjusted_surface < 120.0 && !terrain.is_desert {
+            let min_height = if world_x >= 5000 { 3.0 } else { 16.0 };
+            if adjusted_surface > min_height && adjusted_surface < 120.0 && !terrain.is_desert {
                 let pos = IVec3::new(world_x, surface_y, world_z);
 
                 // Spawn the tree task
@@ -159,12 +186,21 @@ pub fn chunk_vegetation_system(
                 } else {
                     TreeType::Pine
                 };
-                // println!("  QUEUING TREE at {:?} (height {:.1})", pos, adjusted_surface);
+                if world_x >= 5000 {
+                    info!(
+                        "[VEGETATION] Queuing alien tree spawn at {:?} (height {:.1})",
+                        pos, adjusted_surface
+                    );
+                }
                 commands.spawn(TreeSpawnRequest { pos, tree_type });
                 spawn_count += 1;
-            } else if i == 0 {
-                // Log why we failed at least once per chunk
-                // println!("  Tree skip at {:.1}: desert={}, y_match={}", adjusted_surface, terrain.is_desert, chunk_y == chunk_key.y);
+            } else {
+                if chunk_key.x >= 312 && i == 0 {
+                    info!(
+                        "[VEGETATION] Alien chunk skip suitability: surface={:.1}, desert={}",
+                        adjusted_surface, terrain.is_desert
+                    );
+                }
             }
         }
 
@@ -224,11 +260,24 @@ pub fn chunk_vegetation_system(
                 BlockType::Grass => pick_grass_tree(&mut tree_gen.rng),
                 BlockType::Dirt => Some(TreeType::Oak),
                 BlockType::Podzol => Some(TreeType::Pine),
+                BlockType::GlowingMoss => {
+                    if tree_gen.rng.f32() > 0.5 {
+                        Some(TreeType::Oak)
+                    } else {
+                        Some(TreeType::Pine)
+                    }
+                }
+                BlockType::AlienDirt => Some(TreeType::Oak),
                 _ => None,
             };
 
             if let Some(tt) = tree_type {
-                // println!("  SPAWNING {:?} TREE at {:?}", tt, pos);
+                if pos.x >= 5000 {
+                    info!(
+                        "[VEGETATION] Queuing alien candidate tree spawn at {:?} (surface: {:?})",
+                        pos, surface_type
+                    );
+                }
                 commands.spawn(TreeSpawnRequest { pos, tree_type: tt });
             }
         }
@@ -258,18 +307,63 @@ pub fn complete_tree_generation(
 ) {
     for (entity, mut task_comp) in tasks.iter_mut() {
         if let Some(result) = future::block_on(future::poll_once(&mut task_comp.task)) {
-            let bark_mat = materials.add(StandardMaterial {
-                base_color: Color::srgb(0.4, 0.25, 0.1), // Brown bark
-                perceptual_roughness: 0.9,
-                ..default()
-            });
-            let leaf_mat = materials.add(StandardMaterial {
-                base_color: Color::srgb(0.1, 0.5, 0.1), // Forest green
-                ..default()
-            });
-
+            let (bark_mat, leaf_mat) = if result.pos.x >= 5000 {
+                // Alien dimension materials: glowing cyan/magenta mushrooms & trees!
+                let is_mushroom = (result.pos.x + result.pos.z) % 2 == 0;
+                if is_mushroom {
+                    // Glowing Mushroom
+                    (
+                        materials.add(StandardMaterial {
+                            base_color: Color::srgb(0.8, 0.7, 0.9), // Pale purple stalk
+                            emissive: LinearRgba::from(Color::srgb(0.2, 0.1, 0.3)),
+                            perceptual_roughness: 0.6,
+                            ..default()
+                        }),
+                        materials.add(StandardMaterial {
+                            base_color: Color::srgb(0.9, 0.1, 0.6), // Magenta cap
+                            emissive: LinearRgba::from(Color::srgb(0.8, 0.1, 0.5)), // Strong glow!
+                            perceptual_roughness: 0.5,
+                            ..default()
+                        }),
+                    )
+                } else {
+                    // Glowing Tree
+                    (
+                        materials.add(StandardMaterial {
+                            base_color: Color::srgb(0.15, 0.1, 0.25), // Dark purple trunk
+                            emissive: LinearRgba::from(Color::srgb(0.05, 0.02, 0.1)),
+                            perceptual_roughness: 0.8,
+                            ..default()
+                        }),
+                        materials.add(StandardMaterial {
+                            base_color: Color::srgb(0.0, 0.8, 0.9), // Neon cyan leaves
+                            emissive: LinearRgba::from(Color::srgb(0.0, 0.7, 0.8)), // Glowing cyan!
+                            perceptual_roughness: 0.4,
+                            ..default()
+                        }),
+                    )
+                }
+            } else {
+                // Normal world materials
+                (
+                    materials.add(StandardMaterial {
+                        base_color: Color::srgb(0.4, 0.25, 0.1), // Brown bark
+                        perceptual_roughness: 0.9,
+                        ..default()
+                    }),
+                    materials.add(StandardMaterial {
+                        base_color: Color::srgb(0.1, 0.5, 0.1), // Forest green
+                        ..default()
+                    }),
+                )
+            };
             let branch_mesh_handle = meshes.add(result.branch_mesh);
             let leaf_mesh_handle = meshes.add(result.leaf_mesh);
+            trace!(
+                "[VEGETATION] Spawning tree at {:?} (is_alien={})",
+                result.pos,
+                result.pos.x >= 5000
+            );
 
             // Spawn mesh canopy
             commands
@@ -548,6 +642,7 @@ pub fn despawn_trees_near_buildings(
 
     for tree_entity in trees_to_despawn {
         if let Ok(mut entity_cmd) = commands.get_entity(tree_entity) {
+            entity_cmd.despawn_related::<Children>();
             entity_cmd.despawn();
         }
     }

@@ -42,7 +42,7 @@ pub struct SettlementWaypoints {
     pub nodes: Vec<Vec3>,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BuildingType {
     House,
     Shop,
@@ -82,8 +82,8 @@ pub fn spawn_settlements(
                 (chunk_pos.x.wrapping_mul(73856093) ^ chunk_pos.z.wrapping_mul(19349663)).abs();
             let is_settlement_chunk = (chunk_hash % 10) == 0;
 
-            // Prevent spawning at chunk origin (0, 0)
-            if is_settlement_chunk && (chunk_pos.x != 0 || chunk_pos.z != 0) {
+            // Prevent spawning at chunk origin (0, 0), and do not spawn medieval towns in the alien dimension (x >= 5000)
+            if is_settlement_chunk && (chunk_pos.x != 0 || chunk_pos.z != 0) && chunk_pos.x < 312 {
                 if registry.positions.contains(&chunk_pos) {
                     continue;
                 }

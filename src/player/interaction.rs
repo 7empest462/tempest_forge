@@ -67,7 +67,7 @@ impl Plugin for InteractionPlugin {
             .init_resource::<SelectedEntity>()
             .init_resource::<Inventory>()
             .init_resource::<WorldPersistence>()
-            .add_systems(Startup, setup_ui)
+            .add_systems(OnEnter(crate::GameState::InGame), setup_ui)
             .add_systems(
                 Update,
                 (
@@ -77,7 +77,7 @@ impl Plugin for InteractionPlugin {
                     update_particles,
                     toggle_doors,
                 )
-                    .after(crate::ui::egui_warmup),
+                    .run_if(in_state(crate::GameState::InGame)),
             );
     }
 }
@@ -250,10 +250,12 @@ impl Default for PlacementState {
     }
 }
 
+use crate::world::water::MainCamera;
+
 #[derive(SystemParam)]
 pub struct InteractionParams<'w, 's> {
     pub player_query: Query<'w, 's, (&'static Transform, &'static MechSuit), With<Player>>,
-    pub camera_query: Query<'w, 's, (&'static Camera, &'static GlobalTransform), With<Camera3d>>,
+    pub camera_query: Query<'w, 's, (&'static Camera, &'static GlobalTransform), With<MainCamera>>,
     pub machinery_registry: ResMut<'w, MachineryRegistry>,
     pub mouse_input: Res<'w, ButtonInput<MouseButton>>,
     pub placement: ResMut<'w, PlacementState>,
@@ -1055,7 +1057,7 @@ fn update_particles(
 
 fn toggle_doors(
     mouse: Res<ButtonInput<MouseButton>>,
-    camera_query: Query<(&Camera, &GlobalTransform)>,
+    camera_query: Query<(&Camera, &GlobalTransform), With<MainCamera>>,
     mut door_query: Query<(Entity, &GlobalTransform, &mut Transform, &mut Door)>,
     gamepads: Query<&Gamepad>,
 ) {

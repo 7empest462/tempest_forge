@@ -1,20 +1,58 @@
+use crate::GameState;
 use crate::player::combat::{RecoilState, WeaponState};
 use crate::ui::UiState;
 use crate::world::manager::find_ground_height;
 use crate::world::noise_generator::NoiseGenerator;
+use crate::world::water::MainCamera;
 use crate::world::water::{WaterMesh, WaterSimData, get_water_height};
-use bevy::{input::mouse::MouseMotion, pbr::ScatteringMedium, prelude::*};
+use bevy::{
+    camera::visibility::RenderLayers,
+    input::mouse::MouseMotion,
+    pbr::ScatteringMedium,
+    prelude::*,
+};
 use bevy_hanabi::ParticleEffect;
 use bevy_voxel_world::prelude::*;
-
+use rand::RngExt;
 pub struct CameraPlugin;
+
+#[derive(Component)]
+pub struct DummyCamera;
+
+#[derive(Component)]
+pub struct VoxelPlaceholderCamera;
+
+fn setup_dummy_camera(mut commands: Commands) {
+    // 1. Active camera for Egui UI and sky dome
+    commands.spawn((
+        Camera3d::default(),
+        Camera {
+            is_active: true,
+            ..default()
+        },
+        DummyCamera,
+        VoxelWorldCamera::<NoiseGenerator>::default(),
+        Projection::Perspective(PerspectiveProjection {
+            fov: 90.0f32.to_radians(),
+            far: 2000.0,
+            near: 0.1,
+            ..default()
+        }),
+        Transform::from_xyz(0.0, 120.0, 0.0).looking_at(Vec3::new(0.0, 0.0, -50.0), Vec3::Y),
+        RenderLayers::from_layers(&[0, 1]),
+        bevy_egui::PrimaryEguiContext,
+    ));
+}
 
 impl Plugin for CameraPlugin {
     fn build(&self, app: &mut App) {
+        app.add_systems(OnEnter(GameState::MainMenu), setup_dummy_camera);
         app.add_systems(
-            Startup,
+            OnEnter(GameState::Loading),
             (setup_player, setup_water_audio, setup_flight_audio),
         );
+        app.add_systems(OnEnter(GameState::InGame), enforce_main_camera_state);
+        app.add_systems(OnExit(GameState::Loading), enforce_main_camera_state);
         app.add_systems(
             Update,
             (
@@ -27,7 +65,8 @@ impl Plugin for CameraPlugin {
                 player_grounding,
                 update_flight_effects,
                 animate_thruster_flames,
-            ),
+            )
+                .run_if(in_state(GameState::InGame)),
         );
     }
 }
@@ -35,6 +74,7 @@ impl Plugin for CameraPlugin {
 pub struct WaterAudio {
     pub splash_sound: Handle<AudioSource>,
     pub swim_sound: Handle<AudioSource>,
+    pub puddle_step_sound: Handle<AudioSource>,
     pub swim_playing_entity: Option<Entity>,
 }
 
@@ -42,6 +82,7 @@ fn setup_water_audio(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands.insert_resource(WaterAudio {
         splash_sound: asset_server.load("water_splash.ogg"),
         swim_sound: asset_server.load("water_swim.ogg"),
+        puddle_step_sound: asset_server.load("puddle_stepping.wav"),
         swim_playing_entity: None,
     });
 }
@@ -73,6 +114,8 @@ pub struct PhysicsState {
     pub spawn_timer: f32,
     pub initialized: bool,
     pub waiting_for_ground: bool,
+    #[serde(default)]
+    pub step_accumulator: f32,
 }
 
 #[derive(Clone, Copy, PartialEq, Default, serde::Serialize, serde::Deserialize)]
@@ -141,6 +184,7 @@ fn setup_player(
     mut materials: ResMut<Assets<StandardMaterial>>,
     _scattering_media: ResMut<Assets<ScatteringMedium>>,
     noise_gen: Res<NoiseGenerator>,
+    dummy_camera_query: Query<Entity, With<DummyCamera>>,
 ) {
     let head_mesh = meshes.add(crate::player::model::build_head_mesh());
     let body_mesh = meshes.add(crate::player::model::build_body_mesh());
@@ -219,6 +263,7 @@ fn setup_player(
         println!("WARNING: Central mainland not found! Defaulting to origin.");
     }
 
+    let mut pivot_entity = None;
     commands
         .spawn((
             Player,
@@ -266,27 +311,15 @@ fn setup_player(
         .with_children(|parent| {
             println!("PLAYER SPAWNED AT: {:?}", spawn_pos);
 
-            parent
+            let id = parent
                 .spawn((
                     CameraPivot,
                     Transform::from_xyz(0.0, 1.65, 0.0),
                     Visibility::default(),
                     InheritedVisibility::default(),
                 ))
-                .with_children(|pivot| {
-                    pivot.spawn((
-                        Camera3d::default(),
-                        VoxelWorldCamera::<NoiseGenerator>::default(),
-                        Projection::Perspective(PerspectiveProjection {
-                            fov: 90.0f32.to_radians(),
-                            far: 2000.0,
-                            near: 0.1, // Reverted to safer default
-                            ..default()
-                        }),
-                        Transform::from_xyz(0.0, 0.5, 3.5)
-                            .with_rotation(Quat::from_rotation_x(-0.25)), // Looking down
-                    ));
-                });
+                .id();
+            pivot_entity = Some(id);
 
             parent
                 .spawn((
@@ -301,7 +334,7 @@ fn setup_player(
                         MeshMaterial3d(character_mat.clone()),
                         // Head mesh now includes built-in neck; lower it so neck meets torso
                         Transform::from_xyz(0.0, 0.05, 0.0),
-                        Visibility::Hidden,
+                        Visibility::Inherited,
                         InheritedVisibility::default(),
                     ));
 
@@ -311,7 +344,7 @@ fn setup_player(
                             Mesh3d(meshes.add(Cuboid::new(size.x, size.y, size.z))),
                             MeshMaterial3d(mech_materials[*ci].clone()),
                             Transform::from_translation(*pos),
-                            Visibility::Hidden,
+                            Visibility::Inherited,
                         ));
                     }
 
@@ -517,9 +550,90 @@ fn setup_player(
                     });
             }
         });
+
+    if let Some(pivot_entity) = pivot_entity {
+        if let Some(dummy_camera_entity) = dummy_camera_query.iter().next() {
+            commands
+                .entity(dummy_camera_entity)
+                .insert((
+                    MainCamera,
+                    Camera {
+                        is_active: true,
+                        order: 0,
+                        ..default()
+                    },
+                    VoxelWorldCamera::<NoiseGenerator>::default(),
+                    Projection::Perspective(PerspectiveProjection {
+                        fov: 90.0f32.to_radians(),
+                        far: 2000.0,
+                        near: 0.1,
+                        ..default()
+                    }),
+                    Transform::from_xyz(0.0, 0.5, 3.5).with_rotation(Quat::from_rotation_x(-0.25)), // Looking down
+                    RenderLayers::from_layers(&[0, 1]),
+                    bevy_egui::PrimaryEguiContext,
+                ))
+                .remove::<DummyCamera>();
+
+            commands.entity(pivot_entity).add_child(dummy_camera_entity);
+        } else {
+            let camera_entity = commands
+                .spawn((
+                    Camera3d::default(),
+                    Camera {
+                        is_active: true,
+                        order: 0,
+                        ..default()
+                    },
+                    MainCamera,
+                    VoxelWorldCamera::<NoiseGenerator>::default(),
+                    Projection::Perspective(PerspectiveProjection {
+                        fov: 90.0f32.to_radians(),
+                        far: 2000.0,
+                        near: 0.1,
+                        ..default()
+                    }),
+                    Transform::from_xyz(0.0, 0.5, 3.5).with_rotation(Quat::from_rotation_x(-0.25)), // Looking down
+                    RenderLayers::from_layers(&[0, 1]),
+                    bevy_egui::PrimaryEguiContext,
+                ))
+                .id();
+            commands.entity(pivot_entity).add_child(camera_entity);
+        }
+    }
 }
 
-fn player_move(
+fn enforce_main_camera_state(
+    mut cameras: Query<(
+        Entity,
+        &mut Camera,
+        Option<&MainCamera>,
+        Option<&crate::world::water::ReflectionCamera>,
+    )>,
+) {
+    for (entity, mut camera, main_tag, reflection_cam) in cameras.iter_mut() {
+        if main_tag.is_some() || reflection_cam.is_some() {
+            if !camera.is_active || (main_tag.is_some() && camera.order != 0) {
+                camera.is_active = true;
+                if main_tag.is_some() {
+                    camera.order = 0;
+                }
+                info!("[CAMERA] ({entity:?}): activated");
+            }
+        } else {
+            // Deactivate dummy, placeholder, etc.
+            if camera.is_active {
+                info!(
+                    "[CAMERA] ({entity:?}): deactivating (was order={})",
+                    camera.order
+                );
+                camera.is_active = false;
+            }
+        }
+    }
+}
+
+pub fn player_move(
     keys: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
     mut query: Query<
@@ -551,6 +665,7 @@ fn player_move(
     };
 
     let was_swimming = physics.swimming;
+    let was_grounded = physics.grounded;
     let mut move_dir = Vec3::ZERO;
     // Derive horizontal forward/right from the Player's yaw (body rotation)
     let (yaw, _, _) = transform.rotation.to_euler(EulerRot::YXZ);
@@ -594,6 +709,7 @@ fn player_move(
 
     let mut speed = if physics.flying { 20.0 } else { 8.0 };
     let mut in_water = false;
+    let mut in_puddle = false;
     let mut submersion = 0.0;
 
     // Check for water physics (drag and buoyancy) using the dynamic simulated water
@@ -606,16 +722,27 @@ fn player_move(
             water_sim,
         );
 
-        if transform.translation.y < water_height + 0.2 {
-            speed = 5.0; // Swimming speed
-            in_water = true;
+        let feet_y = transform.translation.y - 1.25;
+        if feet_y < water_height + 0.4 {
+            let feet_submersion = water_height - feet_y;
             submersion = water_height - transform.translation.y;
+            // If water is deep (feet_submersion > 0.8), swim. Otherwise, walk in puddle!
+            if feet_submersion > 0.8 {
+                speed = 5.0; // Swimming speed
+                in_water = true;
+            } else {
+                in_puddle = true;
+            }
         }
     }
     physics.swimming = in_water;
 
     if keys.pressed(KeyCode::ShiftLeft) || gamepad_sprint {
         speed *= 2.0;
+    }
+
+    if in_puddle {
+        speed *= 0.85; // Slight resistance in shallow water/puddles
     }
 
     if in_water {
@@ -706,7 +833,12 @@ fn player_move(
             }
         } else {
             if !physics.grounded {
-                physics.velocity.y -= 25.0 * dt; // Gravity
+                let gravity = if transform.translation.x >= 5000.0 {
+                    9.5
+                } else {
+                    25.0
+                };
+                physics.velocity.y -= gravity * dt; // Gravity
             } else if physics.velocity.y < 0.0 {
                 // Prevent gravity from accumulating infinitely while standing on the ground
                 physics.velocity.y = 0.0;
@@ -725,9 +857,16 @@ fn player_move(
 
     // Splash & Swimming Audio Logic
     let just_entered_water = in_water && !was_swimming;
+    let just_entered_puddle = in_puddle && !was_grounded && physics.grounded;
 
-    if just_entered_water {
-        commands.spawn(AudioPlayer::new(water_audio.splash_sound.clone()));
+    if just_entered_water || just_entered_puddle {
+        commands.spawn((
+            AudioPlayer::new(water_audio.splash_sound.clone()),
+            PlaybackSettings {
+                volume: bevy::audio::Volume::Linear(0.5),
+                ..default()
+            },
+        ));
     }
 
     let is_moving_in_water = in_water && (move_dir != Vec3::ZERO || physics.velocity.y.abs() > 0.5);
@@ -746,6 +885,29 @@ fn player_move(
         if let Some(entity) = water_audio.swim_playing_entity.take() {
             commands.entity(entity).despawn();
         }
+    }
+
+    // Puddle Footstep Audio Logic
+    if in_puddle && physics.grounded && physics.speed > 0.5 && !physics.flying {
+        physics.step_accumulator += physics.speed * time.delta_secs();
+        // Take a step every 2.2 meters of horizontal movement
+        if physics.step_accumulator >= 2.2 {
+            physics.step_accumulator = 0.0;
+            // Play puddle step sound with randomized pitch for natural variation
+            let mut rng = rand::rng();
+            let pitch = rng.random_range(0.88..1.12);
+            commands.spawn((
+                AudioPlayer::new(water_audio.puddle_step_sound.clone()),
+                PlaybackSettings {
+                    speed: pitch,
+                    volume: bevy::audio::Volume::Linear(0.55),
+                    ..default()
+                },
+            ));
+        }
+    } else {
+        // Reset accumulator when standing still or not in puddle
+        physics.step_accumulator = 0.0;
     }
 
     // Safety Respawn
@@ -792,9 +954,10 @@ fn player_grounding(
         return;
     }
 
-    // If we are significantly below ground (teleport/loading), snap up
-    if let Some(ground) = find_ground_height(transform.translation, &voxel_world)
-        && transform.translation.y < ground - 1.0
+    // Safety fallback: If the player falls below the world bottom (Y < 2.0) due to a physics glitch,
+    // snap them back to the surface. This is safe and won't interfere with caves (where Y >= 8.0).
+    if transform.translation.y < 2.0
+        && let Some(ground) = find_ground_height(transform.translation, &voxel_world)
     {
         transform.translation.y = ground;
         physics.velocity.y = 0.0;
@@ -802,7 +965,7 @@ fn player_grounding(
     }
 }
 
-fn player_look(
+pub fn player_look(
     mut mouse_events: MessageReader<MouseMotion>,
     mut query: Query<&mut Transform, With<Player>>,
     mut pivot_query: Query<&mut Transform, (With<CameraPivot>, Without<Player>)>,
@@ -904,7 +1067,7 @@ fn mech_controls(
 fn camera_toggle(
     keys: Res<ButtonInput<KeyCode>>,
     mut query: Query<(&mut CameraMode, &mut PhysicsState), With<Player>>,
-    mut camera_query: Query<(&mut Transform, &mut Projection), With<Camera3d>>,
+    mut camera_query: Query<(&mut Transform, &mut Projection), With<MainCamera>>,
     mut hit_events: MessageReader<crate::player::combat::LaserHitEvent>,
     time: Res<Time>,
     mut shake_intensity: Local<f32>,
