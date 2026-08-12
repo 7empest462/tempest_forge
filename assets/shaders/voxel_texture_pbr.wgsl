@@ -156,7 +156,8 @@ fn fragment(
     if texture_idx >= 14u {
         pbr_input.material.base_color = textureSample(mat_array_texture, mat_array_texture_sampler, in.uv, texture_idx);
     } else {
-        pbr_input.material.base_color = textureSample(mat_array_texture, mat_array_texture_sampler, in.uv, texture_idx) * in.color;
+        let ao_color = max(in.color, vec4<f32>(0.35, 0.35, 0.35, 1.0));
+        pbr_input.material.base_color = textureSample(mat_array_texture, mat_array_texture_sampler, in.uv, texture_idx) * ao_color;
     }
     // Sample normal map (RGB)
     let raw_normal = textureSample(mat_normal_array_texture, mat_normal_array_texture_sampler, in.uv, texture_idx).rgb;
@@ -189,16 +190,22 @@ fn fragment(
     pbr_input.material.metallic = orm.b;
     pbr_input.diffuse_occlusion = vec3<f32>(orm.r);
 
-    // Apply custom emissive properties for alien blocks
+    // Apply custom emissive and dielectric properties for alien blocks
     if texture_idx == 16u {
-        pbr_input.material.emissive = pbr_input.material.base_color * vec4<f32>(0.2, 0.85, 0.45, 1.0) * 1.5;
+        // Glowing Moss: bio-luminescent emerald green glow
+        let moss_glow = vec4<f32>(0.1, 0.85, 0.45, 1.0);
+        pbr_input.material.emissive = (pbr_input.material.base_color * 0.8 + moss_glow * 0.4) * 1.5;
     } else if texture_idx == 17u {
-        pbr_input.material.emissive = pbr_input.material.base_color * vec4<f32>(0.3, 0.8, 1.2, 1.0) * 2.0;
-        pbr_input.material.metallic = 0.6;
-        pbr_input.material.perceptual_roughness = 0.2;
+        // Alien Crystal: vibrant cyan crystalline glow (dielectric, non-metallic for full ambient illumination)
+        let crystal_glow = vec4<f32>(0.2, 0.7, 1.2, 1.0);
+        pbr_input.material.emissive = (pbr_input.material.base_color * 1.5 + crystal_glow * 0.8) * 3.0;
+        pbr_input.material.metallic = 0.05;
+        pbr_input.material.perceptual_roughness = 0.15;
     } else if texture_idx == 18u {
-        pbr_input.material.emissive = pbr_input.material.base_color * vec4<f32>(1.0, 0.5, 1.4, 1.0) * 2.5;
-        pbr_input.material.metallic = 0.8;
+        // Floating Crystal: brilliant magenta/purple pulse (dielectric, non-metallic for full ambient illumination)
+        let crystal_glow = vec4<f32>(0.9, 0.3, 1.3, 1.0);
+        pbr_input.material.emissive = (pbr_input.material.base_color * 1.8 + crystal_glow * 1.0) * 3.5;
+        pbr_input.material.metallic = 0.05;
         pbr_input.material.perceptual_roughness = 0.1;
     }
 

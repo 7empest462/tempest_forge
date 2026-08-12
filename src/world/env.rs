@@ -145,10 +145,10 @@ fn update_sun(
             (
                 With<crate::player::camera::Player>,
                 Without<Sun>,
-                Without<Moon>,
             ),
         >,
     >,
+    mut ambient_light: ResMut<GlobalAmbientLight>,
 ) {
     let angle = (time_of_day.hour / 24.0) * 2.0 * PI - PI / 2.0;
 
@@ -157,6 +157,20 @@ fn update_sun(
     } else {
         false
     };
+
+    if is_alien {
+        ambient_light.color = Color::srgb(0.45, 0.35, 0.65);
+        ambient_light.brightness = 3500.0;
+    } else {
+        let sun_height = angle.sin();
+        if sun_height > 0.0 {
+            ambient_light.color = Color::srgb(0.9, 0.95, 1.0);
+            ambient_light.brightness = (120.0 + sun_height * 300.0).clamp(80.0, 420.0);
+        } else {
+            ambient_light.color = Color::srgb(0.2, 0.3, 0.5);
+            ambient_light.brightness = 40.0;
+        }
+    }
 
     // Sun position
     if is_alien {
