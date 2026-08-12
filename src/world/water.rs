@@ -1046,7 +1046,7 @@ fn entity_water_interaction(
         );
 
         let effective_mass = if interactor.is_player {
-            interactor.mass.max(2.5)
+            interactor.mass
         } else {
             interactor.mass.clamp(0.02, 0.45)
         };
@@ -1131,8 +1131,7 @@ fn entity_water_interaction(
                             * 2.5
                             * wave_oscillation
                             * effective_mass;
-                        data.swim_radius = (if interactor.is_player { 2.4 } else { 1.1 })
-                            * effective_mass.powf(0.333); // Perfectly balanced swimming ripples
+                        data.swim_radius = 1.8 * effective_mass.powf(0.333); // Perfectly balanced swimming ripples
                         active = true;
 
                         // Spawn gentle swimming foam / bubble splash particles
@@ -1204,8 +1203,7 @@ fn entity_water_interaction(
                     impulse_writer.write(WaterImpulseEvent {
                         position: pos,
                         force,
-                        radius: (if interactor.is_player { 5.0 } else { 2.2 })
-                            * effective_mass.powf(0.333),
+                        radius: 5.0 * effective_mass.powf(0.333),
                     });
 
                     // Trigger sound on surface crossing
