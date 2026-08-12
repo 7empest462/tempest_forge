@@ -1,6 +1,7 @@
 use super::components::*;
 use bevy::prelude::*;
-use rustc_hash::FxHashMap;
+use hashbrown::HashMap;
+use rustc_hash::FxBuildHasher;
 use smallvec::SmallVec;
 
 pub fn update_power_grid(
@@ -33,7 +34,7 @@ pub fn update_power_grid(
     ];
 
     let mut transfers: SmallVec<[(Entity, Entity, f32); 16]> = SmallVec::new();
-    let mut power_deltas: FxHashMap<Entity, f32> = FxHashMap::default();
+    let mut power_deltas: HashMap<Entity, f32, FxBuildHasher> = HashMap::default();
 
     for (entity, node, _, transform) in query.iter() {
         if node.current_power <= 1.0 {

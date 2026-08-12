@@ -15,7 +15,10 @@ pub struct PowerNode {
     pub capacity: f32,
 }
 
-use rustc_hash::FxHashMap;
+use hashbrown::HashMap;
+use rustc_hash::FxBuildHasher;
+
+pub type FxHashMap<K, V> = HashMap<K, V, FxBuildHasher>;
 
 #[derive(Resource, Default)]
 pub struct MachineryRegistry {

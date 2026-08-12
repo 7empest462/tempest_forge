@@ -7,7 +7,8 @@ use bevy::prelude::*;
 use bevy_hanabi::prelude::EffectAsset;
 use bevy_rapier3d::prelude::*;
 use bevy_voxel_world::prelude::*;
-use rustc_hash::FxHashSet;
+use hashbrown::HashSet;
+use rustc_hash::FxBuildHasher;
 
 pub struct SettlementPlugin;
 
@@ -19,7 +20,7 @@ impl Plugin for SettlementPlugin {
 
 #[derive(Resource, Default)]
 pub struct SettlementRegistry {
-    pub positions: FxHashSet<IVec3>,
+    pub positions: HashSet<IVec3, FxBuildHasher>,
 }
 
 #[derive(Component)]

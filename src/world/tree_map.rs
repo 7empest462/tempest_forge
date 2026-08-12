@@ -10,19 +10,20 @@
 
 use crate::voxel::chunk::BlockType;
 use bevy::prelude::IVec3;
+use hashbrown::HashMap;
 use parking_lot::RwLock;
-use rustc_hash::FxHashMap;
+use rustc_hash::FxBuildHasher;
 use std::sync::Arc;
 
 /// Shared between NoiseGenerator (read) and chunk_vegetation_system (write).
 #[derive(Clone)]
-pub struct TreeMap(pub Arc<RwLock<FxHashMap<IVec3, BlockType>>>);
+pub struct TreeMap(pub Arc<RwLock<HashMap<IVec3, BlockType, FxBuildHasher>>>);
 
 impl Default for TreeMap {
     fn default() -> Self {
-        Self(Arc::new(RwLock::new(FxHashMap::with_capacity_and_hasher(
+        Self(Arc::new(RwLock::new(HashMap::with_capacity_and_hasher(
             4096,
-            Default::default(),
+            FxBuildHasher::default(),
         ))))
     }
 }
