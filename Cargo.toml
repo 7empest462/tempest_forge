@@ -39,7 +39,7 @@ bevy_voxel_world = "0.15.1"
 fastrand = "2.4.1"
 
 # Procedural tree generation via space colonization algorithm
-shrubbery = { git = "https://github.com/TanTanDev/shrubbery" }
+shrubbery = { git = "https://github.com/TanTanDev/shrubbery", rev = "afe5adac0c12f54ddc578c2abfcd37d9e04d2251" }
 bevy_procedural_tree = "0.3"
 bevy_animation_graph = "0.10.0"
 bytemuck = "1.25.0"
