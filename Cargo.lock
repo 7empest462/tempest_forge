@@ -1452,6 +1452,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7ef8e4b7e61dfe7719bb03c884dc270cd46a82efb40f93e9933b990c5c190c59"
 
 [[package]]
+name = "bevy_panorbit_camera"
+version = "0.34.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ec2a3ef5147368953aecb485e6362ea0e23acbd3e4adb02e47058a8c16e9bfe5"
+dependencies = [
+ "bevy",
+]
+
+[[package]]
 name = "bevy_pbr"
 version = "0.18.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2086,7 +2095,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "regex",
- "rustc-hash 2.1.2",
+ "rustc-hash 2.1.3",
  "shlex 1.3.0",
  "syn 2.0.117",
 ]
@@ -3534,9 +3543,9 @@ dependencies = [
 
 [[package]]
 name = "glam"
-version = "0.33.1"
+version = "0.33.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "898f5a568a84989b6c0f8caa50a93074b97dbdc58fc6d9543157bb4562758933"
+checksum = "7360bd2cd76e0cd9032d42cf2922155cecea2685b0cfa4630c3246df030bcfd6"
 
 [[package]]
 name = "glam_matrix_extras"
@@ -3739,6 +3748,11 @@ name = "hashbrown"
 version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
+dependencies = [
+ "allocator-api2",
+ "equivalent",
+ "foldhash 0.2.0",
+]
 
 [[package]]
 name = "heapless"
@@ -5199,7 +5213,7 @@ dependencies = [
  "num-derive",
  "num-traits",
  "ordered-float 4.6.0",
- "rustc-hash 2.1.2",
+ "rustc-hash 2.1.3",
  "simba",
  "slab",
  "smallvec",
@@ -5688,7 +5702,7 @@ dependencies = [
  "num-traits",
  "ordered-float 4.6.0",
  "parry3d 0.16.1",
- "rustc-hash 2.1.2",
+ "rustc-hash 2.1.3",
  "simba",
  "thiserror 1.0.69",
 ]
@@ -5711,7 +5725,7 @@ dependencies = [
  "ordered-float 5.3.0",
  "parry3d 0.25.3",
  "profiling",
- "rustc-hash 2.1.2",
+ "rustc-hash 2.1.3",
  "simba",
  "static_assertions",
  "thiserror 2.0.18",
@@ -5996,9 +6010,9 @@ checksum = "08d43f7aa6b08d49f382cde6a7982047c3426db949b1424bc4b7ec9ae12c6ce2"
 
 [[package]]
 name = "rustc-hash"
-version = "2.1.2"
+version = "2.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "94300abf3f1ae2e2b8ffb7b58043de3d399c73fa6f4b73826402a5c457614dbe"
+checksum = "6b1e7f9a428571be2dc5bc0505c13fb6bf936822b894ec87abf8a08a4e51742d"
 
 [[package]]
 name = "rustc_version"
@@ -6499,30 +6513,37 @@ dependencies = [
 
 [[package]]
 name = "tempest_forge"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
+ "arrayvec",
  "bevy",
  "bevy-inspector-egui",
  "bevy_animation_graph",
  "bevy_egui",
  "bevy_fn_plugin",
  "bevy_hanabi",
+ "bevy_panorbit_camera",
  "bevy_procedural_tree",
  "bevy_rapier3d",
  "bevy_voxel_world",
  "bracket-noise",
  "bytemuck",
+ "crossbeam",
  "fastrand",
  "futures-lite",
  "getrandom 0.4.2",
- "glam 0.33.1",
+ "glam 0.33.3",
+ "hashbrown 0.17.1",
  "image",
  "noise",
+ "parking_lot",
  "rand 0.10.1",
  "rapier3d 0.21.0",
+ "rustc-hash 2.1.3",
  "serde",
  "serde_json",
  "shrubbery",
+ "smallvec",
  "thiserror 2.0.18",
  "wasm-bindgen",
  "web-sys",

@@ -1,7 +1,7 @@
 use bevy::{
     asset::RenderAssetUsages, mesh::Indices, prelude::*, render::render_resource::PrimitiveTopology,
 };
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 /// A specialized mesh generator for voxel-based characters
 /// that supports smooth shading by averaging normals at vertex boundaries.
@@ -12,7 +12,7 @@ pub struct VoxelMeshBuilder {
     indices: Vec<u32>,
     /// Maps (x,y,z) position to vertex index to allow vertex sharing
     /// and normal accumulation for smoothing.
-    vertex_map: HashMap<(i32, i32, i32, usize), u32>,
+    vertex_map: FxHashMap<(i32, i32, i32, usize), u32>,
 }
 
 impl Default for VoxelMeshBuilder {
@@ -28,7 +28,7 @@ impl VoxelMeshBuilder {
             normals: Vec::new(),
             colors: Vec::new(),
             indices: Vec::new(),
-            vertex_map: HashMap::new(),
+            vertex_map: FxHashMap::default(),
         }
     }
 

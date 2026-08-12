@@ -15,9 +15,11 @@ pub struct PowerNode {
     pub capacity: f32,
 }
 
+use rustc_hash::FxHashMap;
+
 #[derive(Resource, Default)]
 pub struct MachineryRegistry {
-    pub map: std::collections::HashMap<IVec3, Entity>,
+    pub map: FxHashMap<IVec3, Entity>,
 }
 
 #[derive(Component)]

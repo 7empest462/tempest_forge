@@ -10,14 +10,14 @@ use bevy_voxel_world::prelude::*;
 use rand::RngExt;
 use serde::{Deserialize, Serialize};
 
-// Custom serialization module for HashMap with IVec3 keys
+// Custom serialization module for FxHashMap with IVec3 keys
 mod blocks_serde {
     use crate::voxel::BlockType;
     use bevy::prelude::IVec3;
+    use rustc_hash::FxHashMap;
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
-    use std::collections::HashMap;
 
-    pub fn serialize<S>(map: &HashMap<IVec3, BlockType>, serializer: S) -> Result<S::Ok, S::Error>
+    pub fn serialize<S>(map: &FxHashMap<IVec3, BlockType>, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
@@ -25,7 +25,7 @@ mod blocks_serde {
         vec.serialize(serializer)
     }
 
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<HashMap<IVec3, BlockType>, D::Error>
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<FxHashMap<IVec3, BlockType>, D::Error>
     where
         D: Deserializer<'de>,
     {
@@ -34,13 +34,13 @@ mod blocks_serde {
     }
 }
 
-// Custom serialization module for HashMap with enum keys
+// Custom serialization module for FxHashMap with enum keys
 mod resources_serde {
     use crate::voxel::BlockType;
+    use rustc_hash::FxHashMap;
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
-    use std::collections::HashMap;
 
-    pub fn serialize<S>(map: &HashMap<BlockType, u32>, serializer: S) -> Result<S::Ok, S::Error>
+    pub fn serialize<S>(map: &FxHashMap<BlockType, u32>, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
@@ -48,7 +48,7 @@ mod resources_serde {
         vec.serialize(serializer)
     }
 
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<HashMap<BlockType, u32>, D::Error>
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<FxHashMap<BlockType, u32>, D::Error>
     where
         D: Deserializer<'de>,
     {
@@ -110,10 +110,12 @@ pub enum ArmorTier {
     Gold,
 }
 
+use rustc_hash::FxHashMap;
+
 #[derive(Resource, Serialize, Deserialize, Clone)]
 pub struct Inventory {
     #[serde(with = "resources_serde")]
-    pub resources: std::collections::HashMap<BlockType, u32>,
+    pub resources: FxHashMap<BlockType, u32>,
     #[serde(default = "default_true")]
     pub has_bow: bool,
     #[serde(default = "default_true")]
@@ -145,7 +147,7 @@ fn default_true() -> bool {
 impl Default for Inventory {
     fn default() -> Self {
         Self {
-            resources: std::collections::HashMap::new(),
+            resources: FxHashMap::default(),
             has_bow: true,
             has_axe: true,
             has_pickaxe: true,
@@ -164,7 +166,7 @@ impl Default for Inventory {
 #[derive(Resource, Default, Serialize, Deserialize, Clone)]
 pub struct WorldPersistence {
     #[serde(with = "blocks_serde")]
-    pub modified_blocks: std::collections::HashMap<IVec3, BlockType>,
+    pub modified_blocks: FxHashMap<IVec3, BlockType>,
 }
 
 fn setup_ui(mut commands: Commands) {
@@ -293,9 +295,7 @@ fn update_interaction(
     mut voxel_world: VoxelWorld<NoiseGenerator>,
     mut entity_spark_cache: Local<Option<(Handle<Mesh>, Handle<StandardMaterial>)>>,
     mut block_spark_cache: Local<Option<(Handle<Mesh>, Handle<StandardMaterial>)>>,
-    mut splinter_cache: Local<
-        std::collections::HashMap<BlockType, (Handle<Mesh>, Handle<StandardMaterial>)>,
-    >,
+    mut splinter_cache: Local<FxHashMap<BlockType, (Handle<Mesh>, Handle<StandardMaterial>)>>,
 ) {
     // Skip all interaction when menus are open (don't access egui context - it breaks button clicks)
     if params.ui_state.show_inventory || params.ui_state.show_pause_menu {
@@ -622,10 +622,7 @@ fn modify_block(
     player_pos: Vec3,
     asset_server: &AssetServer,
     water_impulses: &mut MessageWriter<crate::world::water::WaterImpulseEvent>,
-    splinter_cache: &mut std::collections::HashMap<
-        BlockType,
-        (Handle<Mesh>, Handle<StandardMaterial>),
-    >,
+    splinter_cache: &mut FxHashMap<BlockType, (Handle<Mesh>, Handle<StandardMaterial>)>,
 ) {
     let old_block = if let WorldVoxel::Solid(mat) = voxel_world.get_voxel(pos) {
         material_to_block(mat)
@@ -763,6 +760,12 @@ fn modify_block(
                             base_color: Color::srgb(0.4, 0.4, 0.4),
                             ..default()
                         })),
+                        PowerNode {
+                            power_type: PowerType::Kinetic,
+                            current_power: 0.0,
+                            capacity: 10.0,
+                        },
+                        MachineLogic::Axle,
                         Transform::from_translation(pos.as_vec3() + 0.5),
                         bevy_rapier3d::prelude::Collider::cylinder(0.5, 0.1),
                     ))

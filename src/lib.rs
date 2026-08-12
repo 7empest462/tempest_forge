@@ -67,13 +67,17 @@ pub fn start_game() {
     app.add_plugins(plugins);
 
     #[cfg(target_arch = "wasm32")]
-    app.add_systems(Update, handle_browser_gestures.run_if(in_state(GameState::InGame)));
+    app.add_systems(
+        Update,
+        handle_browser_gestures.run_if(in_state(GameState::InGame)),
+    );
 
     // Use default Egui settings (auto_create_primary_context = true) to ensure input is routed correctly.
     app.init_state::<GameState>()
         .add_plugins(bevy_rapier3d::prelude::RapierPhysicsPlugin::<()>::default())
         .add_plugins(bevy_hanabi::HanabiPlugin)
         .add_plugins(bevy_egui::EguiPlugin::default())
+        .add_plugins(bevy_panorbit_camera::PanOrbitCameraPlugin)
         .add_plugins(bevy::diagnostic::FrameTimeDiagnosticsPlugin::default())
         .add_plugins(bevy::diagnostic::EntityCountDiagnosticsPlugin::default());
     // let  is_dev {

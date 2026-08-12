@@ -6,10 +6,7 @@ use crate::world::noise_generator::NoiseGenerator;
 use crate::world::water::MainCamera;
 use crate::world::water::{WaterMesh, WaterSimData, get_water_height};
 use bevy::{
-    camera::visibility::RenderLayers,
-    input::mouse::MouseMotion,
-    pbr::ScatteringMedium,
-    prelude::*,
+    camera::visibility::RenderLayers, input::mouse::MouseMotion, pbr::ScatteringMedium, prelude::*,
 };
 use bevy_hanabi::ParticleEffect;
 use bevy_voxel_world::prelude::*;
@@ -150,6 +147,7 @@ pub enum CameraMode {
     ThirdPerson,
     FirstPerson,
     FrontPerson,
+    Orbit,
 }
 
 #[derive(Component)]
@@ -570,6 +568,11 @@ fn setup_player(
                         ..default()
                     }),
                     Transform::from_xyz(0.0, 0.5, 3.5).with_rotation(Quat::from_rotation_x(-0.25)), // Looking down
+                    bevy_panorbit_camera::PanOrbitCamera {
+                        enabled: false,
+                        radius: Some(25.0),
+                        ..default()
+                    },
                     RenderLayers::from_layers(&[0, 1]),
                     bevy_egui::PrimaryEguiContext,
                 ))
@@ -594,6 +597,11 @@ fn setup_player(
                         ..default()
                     }),
                     Transform::from_xyz(0.0, 0.5, 3.5).with_rotation(Quat::from_rotation_x(-0.25)), // Looking down
+                    bevy_panorbit_camera::PanOrbitCamera {
+                        enabled: false,
+                        radius: Some(25.0),
+                        ..default()
+                    },
                     RenderLayers::from_layers(&[0, 1]),
                     bevy_egui::PrimaryEguiContext,
                 ))
@@ -967,7 +975,7 @@ fn player_grounding(
 
 pub fn player_look(
     mut mouse_events: MessageReader<MouseMotion>,
-    mut query: Query<&mut Transform, With<Player>>,
+    mut query: Query<(&mut Transform, &CameraMode), With<Player>>,
     mut pivot_query: Query<&mut Transform, (With<CameraPivot>, Without<Player>)>,
     ui_state: Res<UiState>,
     gamepads: Query<&Gamepad>,
@@ -976,9 +984,12 @@ pub fn player_look(
     if ui_state.show_inventory || ui_state.show_pause_menu {
         return;
     }
-    let Ok(mut body_transform) = query.single_mut() else {
+    let Ok((mut body_transform, mode)) = query.single_mut() else {
         return;
     };
+    if *mode == CameraMode::Orbit {
+        return;
+    }
     let Ok(mut pivot_transform) = pivot_query.single_mut() else {
         return;
     };
@@ -1066,23 +1077,31 @@ fn mech_controls(
 
 fn camera_toggle(
     keys: Res<ButtonInput<KeyCode>>,
-    mut query: Query<(&mut CameraMode, &mut PhysicsState), With<Player>>,
-    mut camera_query: Query<(&mut Transform, &mut Projection), With<MainCamera>>,
+    mut query: Query<(&Transform, &mut CameraMode, &mut PhysicsState), With<Player>>,
+    mut camera_query: Query<
+        (
+            &mut Transform,
+            &mut Projection,
+            Option<&mut bevy_panorbit_camera::PanOrbitCamera>,
+        ),
+        (With<MainCamera>, Without<Player>),
+    >,
     mut hit_events: MessageReader<crate::player::combat::LaserHitEvent>,
     time: Res<Time>,
     mut shake_intensity: Local<f32>,
     gamepads: Query<&Gamepad>,
     recoil: Res<crate::player::combat::RecoilState>,
 ) {
-    let Ok((mut mode, mut physics)) = query.single_mut() else {
+    let Ok((player_transform, mut mode, mut physics)) = query.single_mut() else {
         return;
     };
-    let Ok((mut cam_transform, _proj)) = camera_query.single_mut() else {
+    let Ok((mut cam_transform, _proj, mut pan_orbit_opt)) = camera_query.single_mut() else {
         return;
     };
 
     let mut toggle_view = keys.just_pressed(KeyCode::KeyV);
     let toggle_front = keys.just_pressed(KeyCode::KeyC);
+    let toggle_orbit = keys.just_pressed(KeyCode::KeyO);
     let mut toggle_flight = keys.just_pressed(KeyCode::KeyF);
 
     for gamepad in gamepads.iter() {
@@ -1094,18 +1113,36 @@ fn camera_toggle(
         }
     }
 
-    // Cycle toggle for V: Back View -> First Person
+    // Cycle toggle for V: ThirdPerson -> FirstPerson -> FrontPerson -> Orbit -> ThirdPerson
     if toggle_view {
-        if *mode == CameraMode::ThirdPerson {
-            *mode = CameraMode::FirstPerson;
-        } else {
-            *mode = CameraMode::ThirdPerson;
-        }
+        *mode = match *mode {
+            CameraMode::ThirdPerson => CameraMode::FirstPerson,
+            CameraMode::FirstPerson => CameraMode::FrontPerson,
+            CameraMode::FrontPerson => CameraMode::Orbit,
+            CameraMode::Orbit => CameraMode::ThirdPerson,
+        };
     }
 
     // Explicit Front View with C
     if toggle_front {
         *mode = CameraMode::FrontPerson;
+    }
+
+    // Explicit Orbit View with O
+    if toggle_orbit {
+        *mode = CameraMode::Orbit;
+    }
+
+    // Enable/disable PanOrbitCamera and center target focus when switching into Orbit mode
+    if let Some(ref mut pan_orbit) = pan_orbit_opt {
+        if *mode == CameraMode::Orbit {
+            if !pan_orbit.enabled {
+                pan_orbit.enabled = true;
+                pan_orbit.target_focus = player_transform.translation + Vec3::Y * 1.5;
+            }
+        } else {
+            pan_orbit.enabled = false;
+        }
     }
 
     // Toggle flight with F

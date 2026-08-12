@@ -25,7 +25,10 @@ pub fn draw_hud(
 
     let hud_frame = egui::Frame::default()
         .fill(egui::Color32::from_black_alpha(150))
-        .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(80, 80, 80)))
+        .stroke(egui::Stroke::new(
+            1.0_f32,
+            egui::Color32::from_rgb(80, 80, 80),
+        ))
         .corner_radius(5.0)
         .inner_margin(10.0);
 
@@ -314,7 +317,7 @@ pub fn draw_hud(
                 let center = rect.center();
                 let painter = ui.painter();
                 let color = egui::Color32::from_rgb(0, 255, 255); // neon cyan
-                let stroke = egui::Stroke::new(1.5, color);
+                let stroke = egui::Stroke::new(1.5_f32, color);
 
                 // Draw horizontal tick marks
                 painter.line_segment(

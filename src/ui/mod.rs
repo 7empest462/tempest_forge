@@ -254,13 +254,19 @@ fn grab_mouse(
     mut windows: Query<(&mut Window, &mut CursorOptions), With<PrimaryWindow>>,
     ui_state: Res<UiState>,
     mut contexts: bevy_egui::EguiContexts,
+    player_query: Query<&crate::player::camera::CameraMode, With<crate::player::camera::Player>>,
 ) {
     let Ok((_, mut cursor_options)) = windows.single_mut() else {
         return;
     };
 
-    // ALWAYS release cursor when ANY menu is open
-    if ui_state.show_pause_menu || ui_state.show_inventory {
+    let is_orbit = player_query
+        .single()
+        .map(|m| *m == crate::player::camera::CameraMode::Orbit)
+        .unwrap_or(false);
+
+    // ALWAYS release cursor when ANY menu is open or in Orbit camera mode
+    if ui_state.show_pause_menu || ui_state.show_inventory || is_orbit {
         if cursor_options.grab_mode != CursorGrabMode::None {
             cursor_options.grab_mode = CursorGrabMode::None;
             cursor_options.visible = true;
@@ -300,13 +306,18 @@ fn draw_main_menu(
     mut was_exit_hovered: Local<bool>,
 ) {
     *frame_counter += 1;
-    if *frame_counter % 60 == 0 {
-        info!("[DEBUG MENU] draw_main_menu runs. Frame count: {}", *frame_counter);
+    if frame_counter.is_multiple_of(60) {
+        info!(
+            "[DEBUG MENU] draw_main_menu runs. Frame count: {}",
+            *frame_counter
+        );
         if let Ok(window) = windows.single() {
             info!(
                 "[DEBUG SCALE] Window size logical: {}x{}, physical: {}x{}, scale factor: {}",
-                window.width(), window.height(),
-                window.physical_width(), window.physical_height(),
+                window.width(),
+                window.height(),
+                window.physical_width(),
+                window.physical_height(),
                 window.scale_factor()
             );
         }
@@ -315,19 +326,19 @@ fn draw_main_menu(
     let ctx = match contexts.ctx_mut() {
         Ok(c) => c,
         Err(e) => {
-            if *frame_counter % 60 == 0 {
+            if frame_counter.is_multiple_of(60) {
                 warn!("[DEBUG MENU] ctx_mut returned error: {:?}", e);
             }
             return;
         }
     };
 
-    if *frame_counter % 60 == 0 {
+    if frame_counter.is_multiple_of(60) {
+        info!("[DEBUG SCALE] Egui content rect: {:?}", ctx.content_rect());
         info!(
-            "[DEBUG SCALE] Egui screen rect: {:?}",
-            ctx.screen_rect()
+            "[DEBUG MENU] Egui context retrieved successfully. Pointer pos: {:?}",
+            ctx.pointer_latest_pos()
         );
-        info!("[DEBUG MENU] Egui context retrieved successfully. Pointer pos: {:?}", ctx.pointer_latest_pos());
     }
 
     ctx.input(|i| {
@@ -500,13 +511,14 @@ fn debug_menu_input(
     windows: Query<&Window, With<bevy::window::PrimaryWindow>>,
     ready: Res<EguiReady>,
 ) {
-    if ready.0 && mouse_input.just_pressed(MouseButton::Left) {
-        if let Ok(window) = windows.single() {
-            info!(
-                "[DEBUG INPUT] Mouse left click! Window cursor pos: {:?}",
-                window.cursor_position()
-            );
-        }
+    if ready.0
+        && mouse_input.just_pressed(MouseButton::Left)
+        && let Ok(window) = windows.single()
+    {
+        info!(
+            "[DEBUG INPUT] Mouse left click! Window cursor pos: {:?}",
+            window.cursor_position()
+        );
     }
 }
 

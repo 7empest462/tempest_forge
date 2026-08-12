@@ -1062,7 +1062,7 @@ fn update_weapon_visibilities(
 
     let (fp_vis, tp_vis) = match mode {
         CameraMode::FirstPerson => (Visibility::Inherited, Visibility::Hidden),
-        CameraMode::ThirdPerson | CameraMode::FrontPerson => {
+        CameraMode::ThirdPerson | CameraMode::FrontPerson | CameraMode::Orbit => {
             (Visibility::Hidden, Visibility::Inherited)
         }
     };

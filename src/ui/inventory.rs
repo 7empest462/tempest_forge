@@ -34,7 +34,7 @@ pub fn draw_inventory_panel(
             egui::Frame::window(&ctx.style())
                 .fill(egui::Color32::from_rgba_unmultiplied(16, 20, 30, 240))
                 .stroke(egui::Stroke::new(
-                    2.0,
+                    2.0_f32,
                     egui::Color32::from_rgb(65, 105, 170),
                 ))
                 .corner_radius(16.0)
@@ -350,7 +350,7 @@ pub fn draw_inventory_panel(
                                     let is_selected = placement.current_block == *block;
                                     let btn =
                                         ui.add(egui::Button::new(*name).stroke(if is_selected {
-                                            egui::Stroke::new(2.0, egui::Color32::YELLOW)
+                                            egui::Stroke::new(2.0_f32, egui::Color32::YELLOW)
                                         } else {
                                             egui::Stroke::NONE
                                         }));
@@ -391,7 +391,7 @@ pub fn draw_inventory_panel(
                             for (i, (block, name)) in machines.iter().enumerate() {
                                 let is_selected = placement.current_block == *block;
                                 let btn = ui.add(egui::Button::new(*name).stroke(if is_selected {
-                                    egui::Stroke::new(2.0, egui::Color32::GOLD)
+                                    egui::Stroke::new(2.0_f32, egui::Color32::GOLD)
                                 } else {
                                     egui::Stroke::NONE
                                 }));

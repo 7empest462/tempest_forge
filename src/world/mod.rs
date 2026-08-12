@@ -108,8 +108,11 @@ impl Plugin for WorldPlugin {
             ExtendedMaterial<StandardMaterial, MyVoxelMaterial>,
         >::default())
             .add_plugins(
-                VoxelWorldPlugin::with_config(noise_generator::NoiseGenerator::new(fastrand::u32(..), 14))
-                    .with_material(material),
+                VoxelWorldPlugin::with_config(noise_generator::NoiseGenerator::new(
+                    fastrand::u32(..),
+                    14,
+                ))
+                .with_material(material),
             )
             .add_plugins(settlement::SettlementPlugin)
             .add_plugins(env::EnvironmentPlugin)
@@ -364,7 +367,7 @@ fn sync_chunk_colliders(
         .next()
         .map(|t| t.translation)
         .unwrap_or(Vec3::ZERO);
-    let changed_entities: std::collections::HashSet<Entity> = changed_chunk_query.iter().collect();
+    let changed_entities: rustc_hash::FxHashSet<Entity> = changed_chunk_query.iter().collect();
 
     // 64 meters (4 chunks radius) is the physical loading zone.
     // 72 meters adds a hysteresis buffer to prevent mesh remaking if the player treads on a border.

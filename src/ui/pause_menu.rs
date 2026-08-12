@@ -1,5 +1,6 @@
 use crate::persistence::{LoadEvent, SaveEvent};
 use crate::ui::UiState;
+use bevy::diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin};
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 
@@ -13,6 +14,7 @@ pub fn draw_pause_menu(
     mut ui_state: ResMut<UiState>,
     mut save_events: MessageWriter<SaveEvent>,
     mut load_events: MessageWriter<LoadEvent>,
+    diagnostics: Res<DiagnosticsStore>,
 ) {
     if !ui_state.show_pause_menu {
         return;
@@ -46,9 +48,7 @@ pub fn draw_pause_menu(
                             ui.label("I / E - Open Inventory & Crafting");
                             ui.label("M - Toggle Mech Suit");
                             ui.label("1, 2, 3 - Equip Mech Tools (Drill, Axe, Laser)");
-                            ui.label("Z, X, C, V, B - Select Build Block Type");
-                            ui.label("Left Click - Mine / Attack");
-                            ui.label("Right Click - Place Block");
+                            ui.label("V / O - Toggle Camera View (1st, 3rd, Front, Pan Orbit)");
                             ui.label("F5 / F9 - Quick Save / Load");
                             ui.label("Escape - Toggle Pause Menu");
                         }
@@ -97,8 +97,19 @@ pub fn draw_pause_menu(
             });
 
             ui.separator();
-            ui.label("Current Frame Time:");
-            ui.label("(Performance monitoring coming soon)");
+            ui.label(egui::RichText::new("Performance:").strong());
+            if let Some(fps) = diagnostics
+                .get(&FrameTimeDiagnosticsPlugin::FPS)
+                .and_then(|d| d.smoothed())
+            {
+                ui.label(format!("FPS: {:.1}", fps));
+            }
+            if let Some(frame_time) = diagnostics
+                .get(&FrameTimeDiagnosticsPlugin::FRAME_TIME)
+                .and_then(|d| d.smoothed())
+            {
+                ui.label(format!("Frame Time: {:.2} ms", frame_time));
+            }
 
             ui.separator();
 
@@ -166,6 +177,6 @@ pub fn draw_pause_menu(
             });
 
             ui.separator();
-            ui.label("Version: Tempest Forge 0.1.0");
+            ui.label("Version: Tempest Forge 0.3.0");
         });
 }

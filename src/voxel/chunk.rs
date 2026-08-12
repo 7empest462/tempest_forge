@@ -1,5 +1,4 @@
 use bevy::prelude::*;
-use std::collections::HashMap;
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize, Default,
 )]
@@ -156,9 +155,11 @@ pub static DEFAULT_PROPS: BlockProperties = BlockProperties {
     base_hardness: 1.0,
 };
 
+use rustc_hash::FxHashMap;
+
 #[derive(Resource)]
 pub struct BlockRegistry {
-    pub props: HashMap<BlockType, BlockProperties>,
+    pub props: FxHashMap<BlockType, BlockProperties>,
 }
 
 impl Default for BlockRegistry {
@@ -169,7 +170,7 @@ impl Default for BlockRegistry {
 
 pub fn build_block_registry() -> BlockRegistry {
     let mut registry = BlockRegistry {
-        props: HashMap::with_capacity(80),
+        props: FxHashMap::with_capacity_and_hasher(80, Default::default()),
     };
 
     // === TERRAIN ===

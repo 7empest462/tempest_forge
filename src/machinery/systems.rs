@@ -1,5 +1,7 @@
 use super::components::*;
 use bevy::prelude::*;
+use rustc_hash::FxHashMap;
+use smallvec::SmallVec;
 
 pub fn update_power_grid(
     mut query: Query<(Entity, &mut PowerNode, &MachineLogic, &Transform)>,
@@ -30,8 +32,8 @@ pub fn update_power_grid(
         IVec3::NEG_Z,
     ];
 
-    // Collect transfers to apply after the loop
-    let mut transfers = Vec::new();
+    let mut transfers: SmallVec<[(Entity, Entity, f32); 16]> = SmallVec::new();
+    let mut power_deltas: FxHashMap<Entity, f32> = FxHashMap::default();
 
     for (entity, node, _, transform) in query.iter() {
         if node.current_power <= 1.0 {
@@ -49,12 +51,15 @@ pub fn update_power_grid(
         }
     }
 
-    for (_from, _to, _amount) in transfers {
-        // This is still slightly inefficient but works for a small number of machines.
-        // We need to move from 'from' to 'to'.
-        // Since we have a mut query, we can't easily do this in one pass without unsafe or RefCell.
-        // For this demo, I'll stop here or use a better approach if I have time.
-        // Actually, I'll just let the user know the grid is "simulated" via the ECS.
+    for (from, to, amount) in transfers {
+        *power_deltas.entry(from).or_insert(0.0) -= amount;
+        *power_deltas.entry(to).or_insert(0.0) += amount;
+    }
+
+    for (entity, mut node, _, _) in query.iter_mut() {
+        if let Some(&delta) = power_deltas.get(&entity) {
+            node.current_power = (node.current_power + delta).clamp(0.0, node.capacity);
+        }
     }
 }
 
