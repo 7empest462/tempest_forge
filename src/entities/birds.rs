@@ -67,7 +67,7 @@ fn spawn_birds(
             .spawn((
                 Bird,
                 crate::world::water::WaterInteractor {
-                    mass: size * size * size,
+                    mass: (size * 0.15_f32).clamp(0.02_f32, 0.15_f32),
                     ..default()
                 },
                 Creature {

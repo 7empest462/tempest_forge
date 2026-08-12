@@ -122,7 +122,7 @@ pub fn spawn_npc(
                 attack_cooldown: 0.0,
             },
             crate::world::water::WaterInteractor {
-                mass: 3.375, // NPCs scale is 1.5 (1.5^3)
+                mass: 0.5,
                 ..default()
             },
             Health::new(25.0), // A bit tougher!

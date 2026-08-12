@@ -1037,13 +1037,18 @@ fn entity_water_interaction(
         let crossed_surface = in_water != was_in_water;
 
         // Clamp speeds early to avoid massive spikes from animals instantly snapping to voxel terrain
-        let horizontal_speed = Vec2::new(velocity.x, velocity.z).length().min(12.0);
-        let vertical_speed = velocity.y.clamp(-25.0, 25.0);
+        let horizontal_speed = Vec2::new(velocity.x, velocity.z)
+            .length()
+            .min(if interactor.is_player { 12.0 } else { 3.5 });
+        let vertical_speed = velocity.y.clamp(
+            if interactor.is_player { -25.0 } else { -6.0 },
+            if interactor.is_player { 25.0 } else { 6.0 },
+        );
 
         let effective_mass = if interactor.is_player {
-            interactor.mass
+            interactor.mass.max(2.5)
         } else {
-            interactor.mass.min(0.85)
+            interactor.mass.clamp(0.02, 0.45)
         };
 
         let mut data = crate::world::water_gpu::WaterInteractorData::default();
@@ -1126,7 +1131,8 @@ fn entity_water_interaction(
                             * 2.5
                             * wave_oscillation
                             * effective_mass;
-                        data.swim_radius = 1.8 * effective_mass.powf(0.333); // Perfectly balanced swimming ripples
+                        data.swim_radius = (if interactor.is_player { 2.4 } else { 1.1 })
+                            * effective_mass.powf(0.333); // Perfectly balanced swimming ripples
                         active = true;
 
                         // Spawn gentle swimming foam / bubble splash particles
@@ -1177,10 +1183,16 @@ fn entity_water_interaction(
                 {
                     let is_entering = vertical_speed < 0.0;
 
+                    let impact_multiplier = if interactor.is_player { 1.0 } else { 0.35 };
+
                     let impact_force = if is_entering {
-                        (vertical_speed.abs() / 15.0).clamp(0.4, 2.0) * effective_mass
+                        (vertical_speed.abs() / 15.0).clamp(0.4, 2.0)
+                            * effective_mass
+                            * impact_multiplier
                     } else {
-                        (vertical_speed.abs() / 15.0).clamp(0.2, 1.2) * effective_mass
+                        (vertical_speed.abs() / 15.0).clamp(0.2, 1.2)
+                            * effective_mass
+                            * impact_multiplier
                     };
 
                     let force = if is_entering {
@@ -1192,7 +1204,8 @@ fn entity_water_interaction(
                     impulse_writer.write(WaterImpulseEvent {
                         position: pos,
                         force,
-                        radius: 5.0 * effective_mass.powf(0.333), // Restored jumping/splashing radius
+                        radius: (if interactor.is_player { 5.0 } else { 2.2 })
+                            * effective_mass.powf(0.333),
                     });
 
                     // Trigger sound on surface crossing

@@ -267,6 +267,7 @@ fn setup_player(
             Player,
             crate::world::water::WaterInteractor {
                 is_player: true,
+                mass: 2.5,
                 ..default()
             },
             PhysicsState {

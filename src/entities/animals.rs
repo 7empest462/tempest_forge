@@ -206,7 +206,7 @@ fn spawn_animals(
             .spawn((
                 Animal,
                 crate::world::water::WaterInteractor {
-                    mass: size * size * size,
+                    mass: (size * 0.35_f32).clamp(0.05_f32, 0.45_f32),
                     ..default()
                 },
                 Creature {
