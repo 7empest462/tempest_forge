@@ -153,9 +153,7 @@ fn fragment(
 
     let texture_idx = in.tex_idx[tex_face];
 
-    if texture_idx == 16u {
-        pbr_input.material.base_color = vec4<f32>(0.0, 1.0, 0.0, 1.0); // Solid Green for GlowingMoss!
-    } else if texture_idx >= 14u {
+    if texture_idx >= 14u {
         pbr_input.material.base_color = textureSample(mat_array_texture, mat_array_texture_sampler, in.uv, texture_idx);
     } else {
         pbr_input.material.base_color = textureSample(mat_array_texture, mat_array_texture_sampler, in.uv, texture_idx) * in.color;
@@ -193,15 +191,15 @@ fn fragment(
 
     // Apply custom emissive properties for alien blocks
     if texture_idx == 16u {
-        pbr_input.material.emissive = vec4<f32>(0.15, 0.85, 0.45, 1.0) * 8.0;
+        pbr_input.material.emissive = pbr_input.material.base_color * vec4<f32>(0.2, 0.85, 0.45, 1.0) * 1.5;
     } else if texture_idx == 17u {
-        pbr_input.material.emissive = vec4<f32>(0.4, 0.9, 1.4, 1.0) * 12.0;
+        pbr_input.material.emissive = pbr_input.material.base_color * vec4<f32>(0.3, 0.8, 1.2, 1.0) * 2.0;
+        pbr_input.material.metallic = 0.6;
+        pbr_input.material.perceptual_roughness = 0.2;
+    } else if texture_idx == 18u {
+        pbr_input.material.emissive = pbr_input.material.base_color * vec4<f32>(1.0, 0.5, 1.4, 1.0) * 2.5;
         pbr_input.material.metallic = 0.8;
         pbr_input.material.perceptual_roughness = 0.1;
-    } else if texture_idx == 18u {
-        pbr_input.material.emissive = vec4<f32>(1.2, 0.7, 1.8, 1.0) * 15.0;
-        pbr_input.material.metallic = 0.9;
-        pbr_input.material.perceptual_roughness = 0.05;
     }
 
     pbr_input.material.base_color = alpha_discard(pbr_input.material, pbr_input.material.base_color);

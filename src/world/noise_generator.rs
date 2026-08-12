@@ -276,7 +276,7 @@ impl VoxelWorldConfig for NoiseGenerator {
                 // Alien Blocks (indices 14 to 18 in the 19-layer array)
                 BlockType::AlienStone => [14, 14, 14],
                 BlockType::AlienDirt => [15, 15, 15],
-                BlockType::GlowingMoss => [16, 16, 16],
+                BlockType::GlowingMoss => [16, 15, 14],
                 BlockType::AlienCrystal => [17, 17, 17],
                 BlockType::FloatingCrystal => [18, 18, 18],
 
