@@ -271,12 +271,12 @@ pub fn chunk_vegetation_system(
                 BlockType::Podzol => Some(TreeType::Pine),
                 BlockType::GlowingMoss => {
                     if tree_gen.rng.f32() > 0.5 {
-                        Some(TreeType::Oak)
+                        Some(TreeType::Mushroom)
                     } else {
-                        Some(TreeType::Pine)
+                        Some(TreeType::Jungle)
                     }
                 }
-                BlockType::AlienDirt => Some(TreeType::Oak),
+                BlockType::AlienDirt => Some(TreeType::Mushroom),
                 _ => None,
             };
 
