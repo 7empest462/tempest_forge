@@ -462,13 +462,13 @@ fn update_sun(
         if is_alien {
             if let Some(mut transform) = sun_query {
                 let sun_dir1 = Vec3::new(0.6, 0.8, -0.4).normalize();
-                transform.translation = player_transform.translation;
-                transform.look_to(-sun_dir1, Vec3::Y);
+                transform.translation = player_transform.translation + sun_dir1 * 1000.0;
+                transform.look_at(player_transform.translation, Vec3::Y);
             }
             if let Some(mut transform) = moon_query {
                 let sun_dir2 = Vec3::new(-0.7, 0.65, 0.3).normalize();
-                transform.translation = player_transform.translation;
-                transform.look_to(-sun_dir2, Vec3::Y);
+                transform.translation = player_transform.translation + sun_dir2 * 1000.0;
+                transform.look_at(player_transform.translation, Vec3::Y);
             }
         } else {
             let tilt_cos = 0.45f32.cos();
@@ -481,12 +481,12 @@ fn update_sun(
             let moon_dir = -sun_dir;
 
             if let Some(mut transform) = sun_query {
-                transform.translation = player_transform.translation;
-                transform.look_to(-sun_dir, Vec3::Y);
+                transform.translation = player_transform.translation + sun_dir * 1000.0;
+                transform.look_at(player_transform.translation, Vec3::Y);
             }
             if let Some(mut transform) = moon_query {
-                transform.translation = player_transform.translation;
-                transform.look_to(-moon_dir, Vec3::Y);
+                transform.translation = player_transform.translation + moon_dir * 1000.0;
+                transform.look_at(player_transform.translation, Vec3::Y);
             }
         }
     }

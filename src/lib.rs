@@ -174,15 +174,25 @@ fn setup(
         affects_lightmapped_meshes: true,
     });
 
+    commands.insert_resource(bevy::light::DirectionalLightShadowMap { size: 4096 });
+
     // Dynamic Sun
     commands.spawn((
         DirectionalLight {
             shadows_enabled: true,
-            illuminance: 14000.0,
-            shadow_depth_bias: 0.03,
-            shadow_normal_bias: 1.5,
+            illuminance: 80000.0,
+            shadow_depth_bias: 0.02,
+            shadow_normal_bias: 0.6,
             ..default()
         },
+        bevy::light::CascadeShadowConfigBuilder {
+            num_cascades: 4,
+            minimum_distance: 0.1,
+            maximum_distance: 300.0,
+            first_cascade_far_bound: 15.0,
+            overlap_proportion: 0.2,
+        }
+        .build(),
         Transform::IDENTITY,
         crate::world::env::Sun,
     ));
@@ -191,11 +201,19 @@ fn setup(
     commands.spawn((
         DirectionalLight {
             shadows_enabled: true,
-            illuminance: 10000.0,
-            shadow_depth_bias: 0.03,
-            shadow_normal_bias: 1.5,
+            illuminance: 8000.0,
+            shadow_depth_bias: 0.02,
+            shadow_normal_bias: 0.6,
             ..default()
         },
+        bevy::light::CascadeShadowConfigBuilder {
+            num_cascades: 4,
+            minimum_distance: 0.1,
+            maximum_distance: 300.0,
+            first_cascade_far_bound: 15.0,
+            overlap_proportion: 0.2,
+        }
+        .build(),
         Transform::IDENTITY,
         crate::world::env::Moon,
     ));
