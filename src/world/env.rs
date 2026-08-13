@@ -69,10 +69,147 @@ pub struct Moon;
 #[derive(Component)]
 pub struct SkyDome;
 
+#[derive(Component)]
+pub struct MoonBody;
+
+fn generate_moon_crater_texture() -> Image {
+    let width = 256;
+    let height = 256;
+    let mut data = vec![0u8; width * height * 4];
+
+    // Seeded crater centers (cx, cy, radius, depth)
+    let craters = [
+        (60.0, 70.0, 22.0, 0.7),
+        (160.0, 140.0, 30.0, 0.8),
+        (180.0, 60.0, 16.0, 0.6),
+        (90.0, 180.0, 25.0, 0.75),
+        (120.0, 100.0, 14.0, 0.5),
+        (210.0, 190.0, 18.0, 0.65),
+        (40.0, 160.0, 12.0, 0.5),
+        (140.0, 30.0, 20.0, 0.7),
+        (80.0, 120.0, 10.0, 0.4),
+        (190.0, 110.0, 15.0, 0.55),
+    ];
+
+    for y in 0..height {
+        for x in 0..width {
+            let fx = x as f32;
+            let fy = y as f32;
+
+            // Base silvery lunar dust
+            let mut base_r = 180.0f32;
+            let mut base_g = 195.0f32;
+            let mut base_b = 220.0f32;
+
+            // Lunar maria noise (darker basalt basins)
+            let maria = ((fx * 0.03).sin() + (fy * 0.03).cos()) * 0.5 + 0.5;
+            if maria > 0.65 {
+                base_r *= 0.65;
+                base_g *= 0.70;
+                base_b *= 0.75;
+            }
+
+            // Apply craters with raised bright rims
+            for &(cx, cy, radius, depth) in &craters {
+                let dist = ((fx - cx).powi(2) + (fy - cy).powi(2)).sqrt();
+                if dist < radius {
+                    let norm_d = dist / radius;
+                    if norm_d > 0.82 {
+                        // Bright raised crater rim highlight
+                        base_r = (base_r * 1.4).min(255.0);
+                        base_g = (base_g * 1.4).min(255.0);
+                        base_b = (base_b * 1.4).min(255.0);
+                    } else {
+                        // Darkened crater floor basin
+                        let factor = 1.0 - (1.0 - norm_d) * depth * 0.7;
+                        base_r *= factor;
+                        base_g *= factor;
+                        base_b *= factor;
+                    }
+                }
+            }
+
+            let idx = (y * width + x) * 4;
+            data[idx] = base_r.clamp(0.0, 255.0) as u8;
+            data[idx + 1] = base_g.clamp(0.0, 255.0) as u8;
+            data[idx + 2] = base_b.clamp(0.0, 255.0) as u8;
+            data[idx + 3] = 255;
+        }
+    }
+
+    Image::new_fill(
+        bevy::render::render_resource::Extent3d {
+            width: width as u32,
+            height: height as u32,
+            depth_or_array_layers: 1,
+        },
+        bevy::render::render_resource::TextureDimension::D2,
+        &data,
+        bevy::render::render_resource::TextureFormat::Rgba8UnormSrgb,
+        bevy::asset::RenderAssetUsages::RENDER_WORLD | bevy::asset::RenderAssetUsages::MAIN_WORLD,
+    )
+}
+
+fn generate_moon_ring_texture() -> Image {
+    let width = 256;
+    let height = 256;
+    let center = 128.0f32;
+    let mut data = vec![0u8; width * height * 4];
+
+    for y in 0..height {
+        for x in 0..width {
+            let fx = x as f32 - center;
+            let fy = y as f32 - center;
+            let dist = (fx * fx + fy * fy).sqrt();
+
+            let norm_d = dist / center;
+            let mut alpha = 0.0f32;
+            let mut r = 180.0f32;
+            let mut g = 220.0f32;
+            let mut b = 255.0f32;
+
+            if (0.35..=0.92).contains(&norm_d) {
+                // Concentric ring gaps & dense bands
+                let band = (norm_d * 40.0).sin();
+                if band > -0.2 {
+                    alpha = (band * 0.5 + 0.5) * 0.85;
+                    if (0.6..=0.75).contains(&norm_d) {
+                        // Dense bright silver-cyan core ring band
+                        r = 210.0;
+                        g = 240.0;
+                        b = 255.0;
+                        alpha = 0.95;
+                    }
+                }
+            }
+
+            let idx = (y * width + x) * 4;
+            data[idx] = r as u8;
+            data[idx + 1] = g as u8;
+            data[idx + 2] = b as u8;
+            data[idx + 3] = (alpha * 255.0).clamp(0.0, 255.0) as u8;
+        }
+    }
+
+    Image::new_fill(
+        bevy::render::render_resource::Extent3d {
+            width: width as u32,
+            height: height as u32,
+            depth_or_array_layers: 1,
+        },
+        bevy::render::render_resource::TextureDimension::D2,
+        &data,
+        bevy::render::render_resource::TextureFormat::Rgba8UnormSrgb,
+        bevy::asset::RenderAssetUsages::RENDER_WORLD | bevy::asset::RenderAssetUsages::MAIN_WORLD,
+    )
+}
+
 fn setup_sky_dome(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut sky_materials: ResMut<Assets<SkyMaterial>>,
+    mut standard_materials: ResMut<Assets<StandardMaterial>>,
+    mut images: ResMut<Assets<Image>>,
 ) {
     // Large sphere inside the far culling plane (1000m)
     let sphere_mesh = meshes.add(Sphere::new(750.0).mesh().ico(5).unwrap());
@@ -91,6 +228,51 @@ fn setup_sky_dome(
         MeshMaterial3d(sky_material),
         Transform::from_scale(Vec3::splat(-1.0)), // Flip normals inwards
     ));
+
+    // Spawn 3D Cratered Moon Body with Planetary Ring System
+    let crater_image = generate_moon_crater_texture();
+    let ring_image = generate_moon_ring_texture();
+
+    let crater_handle = images.add(crater_image);
+    let ring_handle = images.add(ring_image);
+
+    let moon_sphere_mesh = meshes.add(Sphere::new(28.0).mesh().ico(5).unwrap());
+    let moon_ring_mesh = meshes.add(Plane3d::default().mesh().size(120.0, 120.0));
+
+    let moon_material = standard_materials.add(StandardMaterial {
+        base_color_texture: Some(crater_handle),
+        emissive: LinearRgba::from(Color::srgb(0.7, 0.8, 1.0)),
+        perceptual_roughness: 0.85,
+        metallic: 0.05,
+        ..default()
+    });
+
+    let ring_material = standard_materials.add(StandardMaterial {
+        base_color_texture: Some(ring_handle),
+        emissive: LinearRgba::from(Color::srgb(0.6, 0.8, 1.2)),
+        alpha_mode: AlphaMode::Blend,
+        cull_mode: None, // Double-sided ring rendering
+        perceptual_roughness: 0.2,
+        metallic: 0.1,
+        ..default()
+    });
+
+    commands
+        .spawn((
+            Name::new("MoonBody"),
+            MoonBody,
+            Mesh3d(moon_sphere_mesh),
+            MeshMaterial3d(moon_material),
+            Transform::from_xyz(0.0, 600.0, 0.0),
+        ))
+        .with_children(|parent| {
+            parent.spawn((
+                Name::new("MoonRing"),
+                Mesh3d(moon_ring_mesh),
+                MeshMaterial3d(ring_material),
+                Transform::from_rotation(Quat::from_euler(EulerRot::XYZ, 0.65, 0.2, 0.4)),
+            ));
+        });
 }
 
 fn update_time(time: Res<Time>, mut time_of_day: ResMut<TimeOfDay>) {
@@ -290,6 +472,16 @@ fn update_sky_dome(
     mut sky_materials: ResMut<Assets<SkyMaterial>>,
     sky_dome_mesh_query: Option<Single<&MeshMaterial3d<SkyMaterial>, With<SkyDome>>>,
     time_of_day: Res<TimeOfDay>,
+    moon_body_query: Option<
+        Single<
+            &mut Transform,
+            (
+                With<MoonBody>,
+                Without<SkyDome>,
+                Without<crate::player::camera::Player>,
+            ),
+        >,
+    >,
 ) {
     // Center sky dome on player
     let Some(player_transform) = player_query else {
@@ -302,6 +494,16 @@ fn update_sky_dome(
     // Maintain inward-facing flip scale
     sky_dome_transform.translation = player_transform.translation;
     sky_dome_transform.scale = Vec3::splat(-1.0);
+
+    // Orbit 3D Ringed Moon around player along celestial arc
+    if let Some(mut moon_transform) = moon_body_query {
+        let angle = (time_of_day.hour / 24.0) * 2.0 * PI - PI / 2.0;
+        let moon_angle = angle + PI;
+        let moon_dir = Vec3::new(0.0, moon_angle.sin(), moon_angle.cos()).normalize();
+
+        moon_transform.translation = player_transform.translation + moon_dir * 600.0;
+        moon_transform.rotation = Quat::from_rotation_y(time.elapsed_secs() * 0.03);
+    }
 
     // Update uniforms
     let Some(mat_handle) = sky_dome_mesh_query else {
