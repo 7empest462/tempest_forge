@@ -15,7 +15,7 @@ pub struct TerrainData {
 
 #[derive(Resource, Clone)]
 pub struct NoiseGenerator {
-    pub inner: Arc<parking_lot::RwLock<Arc<NoiseGeneratorInner>>>,
+    pub inner: Arc<NoiseGeneratorInner>,
     pub spawning_distance: u32,
 }
 
@@ -85,7 +85,7 @@ impl NoiseGenerator {
         flora_noise.set_frequency(0.15);
 
         Self {
-            inner: Arc::new(parking_lot::RwLock::new(Arc::new(NoiseGeneratorInner {
+            inner: Arc::new(NoiseGeneratorInner {
                 seed,
                 base_noise,
                 detail_noise,
@@ -94,14 +94,13 @@ impl NoiseGenerator {
                 temp_noise,
                 ore_noise,
                 flora_noise,
-            }))),
+            }),
             spawning_distance,
         }
     }
 
     pub fn get_terrain(&self, x: f32, z: f32) -> TerrainData {
-        let inner_arc = self.inner.read().clone();
-        let inner = &*inner_arc;
+        let inner = &*self.inner;
 
         // Branch for Alien Dimension
         if x >= 5000.0 {
@@ -153,8 +152,7 @@ impl NoiseGenerator {
     }
 
     pub fn get_adjusted_surface_height(&self, x: f32, z: f32) -> f32 {
-        let inner_arc = self.inner.read().clone();
-        let inner = &*inner_arc;
+        let inner = &*self.inner;
         if x >= 5000.0 {
             return get_alien_height(x, z, inner);
         }
@@ -180,15 +178,15 @@ impl NoiseGenerator {
     }
 
     pub fn get_cave(&self, x: f32, y: f32, z: f32) -> f32 {
-        self.inner.read().cave_noise.get_noise3d(x, y, z)
+        self.inner.cave_noise.get_noise3d(x, y, z)
     }
 
     pub fn get_ore_vein(&self, x: f32, y: f32, z: f32) -> f32 {
-        self.inner.read().ore_noise.get_noise3d(x, y, z)
+        self.inner.ore_noise.get_noise3d(x, y, z)
     }
 
     pub fn get_flora(&self, x: f32, z: f32) -> f32 {
-        self.inner.read().flora_noise.get_noise(x, z)
+        self.inner.flora_noise.get_noise(x, z)
     }
 }
 
@@ -288,7 +286,7 @@ impl VoxelWorldConfig for NoiseGenerator {
     fn voxel_lookup_delegate(&self) -> VoxelLookupDelegate<Self::MaterialIndex> {
         let generator = self.clone();
         Box::new(move |_chunk_pos, _lod, _prev_chunk| {
-            let inner_arc = generator.inner.read().clone();
+            let inner_arc = generator.inner.clone();
             let gen_ref = generator.clone();
             Box::new(move |pos, _prev_voxel| {
                 let x = pos.x as f32;
