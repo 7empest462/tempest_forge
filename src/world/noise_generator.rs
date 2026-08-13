@@ -5,7 +5,7 @@ use crate::voxel::chunk::BlockType;
 use bevy::prelude::*;
 use bevy_voxel_world::prelude::*;
 use bracket_noise::prelude::*;
-use std::sync::Arc;
+use triomphe::Arc;
 
 pub struct TerrainData {
     pub height: f32,
@@ -249,8 +249,10 @@ impl VoxelWorldConfig for NoiseGenerator {
         Some(("default_texture.png".into(), 14))
     }
 
-    fn texture_index_mapper(&self) -> Arc<dyn Fn(Self::MaterialIndex) -> [u32; 3] + Send + Sync> {
-        Arc::new(|vox_mat: u8| {
+    fn texture_index_mapper(
+        &self,
+    ) -> std::sync::Arc<dyn Fn(Self::MaterialIndex) -> [u32; 3] + Send + Sync> {
+        std::sync::Arc::new(|vox_mat: u8| {
             let block = BlockType::from(vox_mat);
             match block {
                 BlockType::Water => [11, 11, 11],

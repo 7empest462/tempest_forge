@@ -13,7 +13,7 @@ use bevy::prelude::IVec3;
 use hashbrown::HashMap;
 use parking_lot::RwLock;
 use rustc_hash::FxBuildHasher;
-use std::sync::Arc;
+use triomphe::Arc;
 
 /// Shared between NoiseGenerator (read) and chunk_vegetation_system (write).
 #[derive(Clone)]
