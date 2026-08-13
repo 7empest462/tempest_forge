@@ -7,6 +7,7 @@ struct SkyMaterial {
     time: f32,
     cloudiness: f32,
     is_alien: f32,
+    sun_dir: vec4<f32>,
 };
 
 @group(3) @binding(0) var<uniform> material: SkyMaterial;
@@ -119,7 +120,15 @@ fn fragment(
     }
     
     // Base sky color from uniform
-    let sky_color = material.color.rgb;
+    var sky_color = material.color.rgb;
+
+    // === Procedural Daytime Sun Disc & Solar Glare in Regular Sky ===
+    let sun_d = normalize(material.sun_dir.xyz);
+    let sun_dot = max(0.0, dot(direction, sun_d));
+    let sun_disc = pow(sun_dot, 600.0) * 5.0;
+    let sun_glare = pow(sun_dot, 14.0) * 0.9;
+    let sun_light_color = vec3<f32>(1.0, 0.92, 0.65) * (sun_disc + sun_glare);
+    sky_color += sun_light_color * (1.0 - material.cloudiness * 0.7);
     
     // Project direction to 2D XZ for planar scrolling clouds
     let uv = direction.xz / (abs(direction.y) + 0.12);

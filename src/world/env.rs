@@ -1,3 +1,6 @@
+
+use bevy::light::{NotShadowCaster, NotShadowReceiver};
+use bevy::pbr::*;
 use bevy::prelude::*;
 use bevy::render::render_resource::AsBindGroup;
 use bevy::shader::ShaderRef;
@@ -33,6 +36,8 @@ pub struct SkyMaterial {
     pub cloudiness: f32,
     #[uniform(0)]
     pub is_alien: f32,
+    #[uniform(0)]
+    pub sun_dir: Vec4,
 }
 
 impl Material for SkyMaterial {
@@ -262,7 +267,6 @@ fn setup_sky_dome(
     mut standard_materials: ResMut<Assets<StandardMaterial>>,
     mut images: ResMut<Assets<Image>>,
 ) {
-    // Large sphere inside the far culling plane (1000m)
     let sphere_mesh = meshes.add(Sphere::new(750.0).mesh().ico(5).unwrap());
 
     let sky_material = sky_materials.add(SkyMaterial {
@@ -270,6 +274,7 @@ fn setup_sky_dome(
         time: 0.0,
         cloudiness: 0.0,
         is_alien: 0.0,
+        sun_dir: Vec4::new(0.0, 1.0, 0.0, 0.0),
     });
 
     commands.spawn((
@@ -277,6 +282,7 @@ fn setup_sky_dome(
         SkyDome,
         Mesh3d(sphere_mesh),
         MeshMaterial3d(sky_material),
+        // test
         Transform::from_scale(Vec3::splat(-1.0)), // Flip normals inwards
     ));
 
@@ -315,6 +321,8 @@ fn setup_sky_dome(
             MoonBody,
             Mesh3d(moon_sphere_mesh),
             MeshMaterial3d(moon_material),
+            NotShadowCaster,
+            NotShadowReceiver,
             Transform::from_xyz(0.0, 600.0, 0.0),
         ))
         .with_children(|parent| {
@@ -322,6 +330,8 @@ fn setup_sky_dome(
                 Name::new("MoonRing"),
                 Mesh3d(moon_ring_mesh),
                 MeshMaterial3d(ring_material),
+                NotShadowCaster,
+                NotShadowReceiver,
                 Transform::from_rotation(Quat::from_euler(EulerRot::XYZ, 0.65, 0.2, 0.4)),
             ));
         });
@@ -357,6 +367,8 @@ fn setup_sky_dome(
             SunBody,
             Mesh3d(sun_sphere_mesh),
             MeshMaterial3d(sun_material),
+            NotShadowCaster,
+            NotShadowReceiver,
             Transform::from_xyz(0.0, 550.0, 0.0),
         ))
         .with_children(|parent| {
@@ -364,6 +376,8 @@ fn setup_sky_dome(
                 Name::new("SunCorona"),
                 Mesh3d(sun_corona_mesh),
                 MeshMaterial3d(corona_material),
+                NotShadowCaster,
+                NotShadowReceiver,
                 Transform::from_rotation(Quat::from_rotation_x(std::f32::consts::FRAC_PI_2)),
             ));
         });
@@ -638,6 +652,7 @@ fn update_sky_dome(
     };
     if let Some(mat) = sky_materials.get_mut(&mat_handle.0) {
         mat.time = time.elapsed_secs();
+        mat.sun_dir = Vec4::new(sun_dir.x, sun_dir.y, sun_dir.z, 0.0);
 
         let is_alien = if player_transform.translation.x >= 5000.0 {
             1.0
