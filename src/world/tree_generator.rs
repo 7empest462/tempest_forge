@@ -413,7 +413,8 @@ pub fn complete_tree_generation(
             let (parent_transform, child_transform) = if is_mushroom {
                 (
                     Transform::from_translation(result.pos.as_vec3() + Vec3::new(0.0, 2.25, 0.0)),
-                    Transform::from_xyz(0.0, 2.25, 0.0),
+                    Transform::from_xyz(0.0, 2.25, 0.0)
+                        .with_rotation(Quat::from_rotation_z(std::f32::consts::PI)),
                 )
             } else {
                 (
