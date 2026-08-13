@@ -410,12 +410,24 @@ pub fn complete_tree_generation(
                 is_alien
             );
 
+            let (parent_transform, child_transform) = if is_mushroom {
+                (
+                    Transform::from_translation(result.pos.as_vec3() + Vec3::new(0.0, 2.25, 0.0)),
+                    Transform::from_xyz(0.0, 2.25, 0.0),
+                )
+            } else {
+                (
+                    Transform::from_translation(result.pos.as_vec3() + Vec3::new(0.0, 1.0, 0.0)),
+                    Transform::default(),
+                )
+            };
+
             // Spawn mesh canopy
             commands
                 .entity(entity)
                 .remove::<TreeGenerationTask>()
                 .insert((
-                    Transform::from_translation(result.pos.as_vec3() + Vec3::new(0.0, 1.0, 0.0)),
+                    parent_transform,
                     Visibility::default(),
                     InheritedVisibility::default(),
                     Mesh3d(branch_mesh_handle),
@@ -429,7 +441,7 @@ pub fn complete_tree_generation(
                     parent.spawn((
                         Mesh3d(leaf_mesh_handle),
                         MeshMaterial3d(leaf_mat),
-                        Transform::default(),
+                        child_transform,
                         Visibility::default(),
                         InheritedVisibility::default(),
                     ));
