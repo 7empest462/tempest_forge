@@ -293,6 +293,7 @@ fn setup_sky_dome(
     let moon_material = standard_materials.add(StandardMaterial {
         base_color_texture: Some(crater_handle),
         emissive: LinearRgba::from(Color::srgb(0.7, 0.8, 1.0)),
+        cull_mode: None,
         perceptual_roughness: 0.85,
         metallic: 0.05,
         ..default()
@@ -329,12 +330,13 @@ fn setup_sky_dome(
     let corona_image = generate_sun_corona_texture();
     let corona_handle = images.add(corona_image);
 
-    let sun_sphere_mesh = meshes.add(Sphere::new(35.0).mesh().ico(5).unwrap());
-    let sun_corona_mesh = meshes.add(Plane3d::default().mesh().size(160.0, 160.0));
+    let sun_sphere_mesh = meshes.add(Sphere::new(50.0).mesh().ico(5).unwrap());
+    let sun_corona_mesh = meshes.add(Plane3d::default().mesh().size(240.0, 240.0));
 
     let sun_material = standard_materials.add(StandardMaterial {
         base_color: Color::srgb(1.0, 0.85, 0.35),
-        emissive: LinearRgba::from(Color::srgb(3.5, 2.5, 0.8)),
+        emissive: LinearRgba::from(Color::srgb(4.0, 3.0, 1.0)),
+        cull_mode: None,
         perceptual_roughness: 0.1,
         unlit: true,
         ..default()
@@ -342,7 +344,7 @@ fn setup_sky_dome(
 
     let corona_material = standard_materials.add(StandardMaterial {
         base_color_texture: Some(corona_handle),
-        emissive: LinearRgba::from(Color::srgb(3.0, 2.2, 0.6)),
+        emissive: LinearRgba::from(Color::srgb(3.5, 2.6, 0.8)),
         alpha_mode: AlphaMode::Blend,
         cull_mode: None,
         unlit: true,
@@ -355,7 +357,7 @@ fn setup_sky_dome(
             SunBody,
             Mesh3d(sun_sphere_mesh),
             MeshMaterial3d(sun_material),
-            Transform::from_xyz(0.0, 600.0, 0.0),
+            Transform::from_xyz(0.0, 550.0, 0.0),
         ))
         .with_children(|parent| {
             parent.spawn((
@@ -418,7 +420,7 @@ fn update_sun(
 ) {
     let angle = (time_of_day.hour / 24.0) * 2.0 * PI - PI / 2.0;
 
-    let is_alien = if let Some(player_transform) = player_query {
+    let is_alien = if let Some(ref player_transform) = player_query {
         player_transform.translation.x >= 5000.0
     } else {
         false
@@ -438,22 +440,37 @@ fn update_sun(
         }
     }
 
-    // Sun position
-    if is_alien {
-        if let Some(mut transform) = sun_query {
-            let sun_dir1 = Vec3::new(0.6, 0.8, -0.4).normalize();
-            transform.look_to(-sun_dir1, Vec3::Y);
-        }
-        if let Some(mut transform) = moon_query {
-            let sun_dir2 = Vec3::new(-0.7, 0.65, 0.3).normalize();
-            transform.look_to(-sun_dir2, Vec3::Y);
-        }
-    } else {
-        if let Some(mut transform) = sun_query {
-            transform.rotation = Quat::from_rotation_x(angle);
-        }
-        if let Some(mut transform) = moon_query {
-            transform.rotation = Quat::from_rotation_x(angle + PI);
+    // Sun position & DirectionalLight cascade tracking with 25-degree celestial tilt
+    if let Some(ref player_transform) = player_query {
+        if is_alien {
+            if let Some(mut transform) = sun_query {
+                let sun_dir1 = Vec3::new(0.6, 0.8, -0.4).normalize();
+                transform.translation = player_transform.translation;
+                transform.look_to(-sun_dir1, Vec3::Y);
+            }
+            if let Some(mut transform) = moon_query {
+                let sun_dir2 = Vec3::new(-0.7, 0.65, 0.3).normalize();
+                transform.translation = player_transform.translation;
+                transform.look_to(-sun_dir2, Vec3::Y);
+            }
+        } else {
+            let tilt_cos = 0.45f32.cos();
+            let tilt_sin = 0.45f32.sin();
+
+            let raw_y = angle.sin();
+            let raw_z = angle.cos();
+
+            let sun_dir = Vec3::new(raw_z * tilt_sin, raw_y, raw_z * tilt_cos).normalize();
+            let moon_dir = -sun_dir;
+
+            if let Some(mut transform) = sun_query {
+                transform.translation = player_transform.translation;
+                transform.look_to(-sun_dir, Vec3::Y);
+            }
+            if let Some(mut transform) = moon_query {
+                transform.translation = player_transform.translation;
+                transform.look_to(-moon_dir, Vec3::Y);
+            }
         }
     }
 
@@ -590,22 +607,29 @@ fn update_sky_dome(
     sky_dome_transform.translation = player_transform.translation;
     sky_dome_transform.scale = Vec3::splat(-1.0);
 
-    // Orbit 3D Ringed Moon around player along celestial arc
+    // Orbit 3D Ringed Moon & 3D Golden Sun with 25-degree celestial tilt
     let angle = (time_of_day.hour / 24.0) * 2.0 * PI - PI / 2.0;
-    if let Some(mut moon_transform) = moon_body_query {
-        let moon_angle = angle + PI;
-        let moon_dir = Vec3::new(0.0, moon_angle.sin(), moon_angle.cos()).normalize();
+    let tilt_cos = 0.45f32.cos();
+    let tilt_sin = 0.45f32.sin();
 
-        moon_transform.translation = player_transform.translation + moon_dir * 600.0;
-        moon_transform.rotation = Quat::from_rotation_y(time.elapsed_secs() * 0.03);
+    let raw_y = angle.sin();
+    let raw_z = angle.cos();
+
+    let sun_dir = Vec3::new(raw_z * tilt_sin, raw_y, raw_z * tilt_cos).normalize();
+    let moon_dir = -sun_dir;
+
+    if let Some(mut moon_transform) = moon_body_query {
+        let moon_pos = player_transform.translation + moon_dir * 550.0;
+        moon_transform.translation = moon_pos;
+        moon_transform.look_at(player_transform.translation, Vec3::Y);
+        moon_transform.rotate_local_y(time.elapsed_secs() * 0.03);
     }
 
-    // Orbit 3D Golden Sun & Solar Corona around player along celestial arc
     if let Some(mut sun_transform) = sun_body_query {
-        let sun_dir = Vec3::new(0.0, angle.sin(), angle.cos()).normalize();
-
-        sun_transform.translation = player_transform.translation + sun_dir * 600.0;
-        sun_transform.rotation = Quat::from_rotation_y(time.elapsed_secs() * 0.02);
+        let sun_pos = player_transform.translation + sun_dir * 550.0;
+        sun_transform.translation = sun_pos;
+        sun_transform.look_at(player_transform.translation, Vec3::Y);
+        sun_transform.rotate_local_z(time.elapsed_secs() * 0.02);
     }
 
     // Update uniforms
