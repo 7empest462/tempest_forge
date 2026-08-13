@@ -154,10 +154,12 @@ pub fn chunk_vegetation_system(
             let flora_val = noise_gen.get_flora(world_x as f32, world_z as f32);
 
             // Biome Density:
-            // Forest (> 0.4): High density
-            // Sparse Plains (< -0.4): Very low density
-            // Regular: Medium density
-            let density_limit = if flora_val > 0.4 {
+            // Alien dimension: High alien tree & mushroom density (12)
+            // Normal Forest (> 0.4): High density
+            // Normal Sparse Plains (< -0.4): Very low density
+            let density_limit = if world_x >= 5000 {
+                12 // Alien flora & mushroom paradise
+            } else if flora_val > 0.4 {
                 14 // Dense Forest
             } else if flora_val < -0.4 {
                 1 // Sparse Plains

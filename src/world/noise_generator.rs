@@ -332,19 +332,19 @@ impl VoxelWorldConfig for NoiseGenerator {
                 if x >= 5000.0 {
                     let adjusted_surface = get_alien_height(x, z, inner);
 
-                    // 1. Floating Islands suspended high in the sky (Y = 38 to 62)
-                    if (38.0..=62.0).contains(&y) {
+                    // 1. Floating Islands suspended in the sky (Y = 24 to 52)
+                    if (24.0..=52.0).contains(&y) {
                         let island_noise = fbm_noise_fast(
                             x * 0.02,
                             z * 0.02,
                             &inner.temp_noise,
                             &inner.ore_noise,
                         );
-                        let island_center_y = 50.0;
+                        let island_center_y = 38.0;
                         let y_dist = (y - island_center_y).abs();
-                        let island_threshold = 0.12;
+                        let island_threshold = 0.02;
                         if island_noise > island_threshold {
-                            let max_half_thickness = (island_noise - island_threshold) * 35.0;
+                            let max_half_thickness = (island_noise - island_threshold) * 28.0;
                             if y_dist <= max_half_thickness {
                                 // Top rim of island is FloatingCrystal, core is AlienStone, bottom is AlienDirt
                                 if y >= island_center_y + max_half_thickness - 1.5 {
