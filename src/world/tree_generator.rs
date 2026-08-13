@@ -194,7 +194,8 @@ pub fn chunk_vegetation_system(
 
                 // Spawn the tree task with spatial grove clustering
                 let tree_type = if world_x >= 5000 {
-                    let grove_val = noise_gen.get_flora(world_x as f32 * 0.05, world_z as f32 * 0.05);
+                    let grove_val =
+                        noise_gen.get_flora(world_x as f32 * 0.05, world_z as f32 * 0.05);
                     if grove_val > 0.0 {
                         TreeType::Mushroom
                     } else {
@@ -409,18 +410,12 @@ pub fn complete_tree_generation(
 
             let (branch_mesh_handle, leaf_mesh_handle) = mesh_cache
                 .entry(variant_key)
-                .or_insert_with(|| {
-                    (
-                        meshes.add(result.branch_mesh),
-                        meshes.add(result.leaf_mesh),
-                    )
-                })
+                .or_insert_with(|| (meshes.add(result.branch_mesh), meshes.add(result.leaf_mesh)))
                 .clone();
 
             trace!(
                 "[VEGETATION] Spawning tree at {:?} (is_alien={})",
-                result.pos,
-                is_alien
+                result.pos, is_alien
             );
 
             let (parent_transform, child_transform) = if is_mushroom {

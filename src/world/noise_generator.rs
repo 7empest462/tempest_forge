@@ -334,12 +334,8 @@ impl VoxelWorldConfig for NoiseGenerator {
 
                     // 1. Floating Islands suspended in the sky (Y = 24 to 52)
                     if (24.0..=52.0).contains(&y) {
-                        let island_noise = fbm_noise_fast(
-                            x * 0.02,
-                            z * 0.02,
-                            &inner.temp_noise,
-                            &inner.ore_noise,
-                        );
+                        let island_noise =
+                            fbm_noise_fast(x * 0.02, z * 0.02, &inner.temp_noise, &inner.ore_noise);
                         let island_center_y = 38.0;
                         let y_dist = (y - island_center_y).abs();
                         let island_threshold = 0.02;

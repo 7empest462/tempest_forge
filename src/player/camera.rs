@@ -1140,6 +1140,15 @@ fn camera_toggle(
                 pan_orbit.enabled = true;
             }
             pan_orbit.target_focus = Vec3::Y * 1.5;
+            if let Some(r) = pan_orbit.radius {
+                if r > 35.0 {
+                    pan_orbit.radius = Some(35.0);
+                    pan_orbit.target_radius = 35.0;
+                } else if r < 2.0 {
+                    pan_orbit.radius = Some(2.0);
+                    pan_orbit.target_radius = 2.0;
+                }
+            }
         } else {
             pan_orbit.enabled = false;
         }

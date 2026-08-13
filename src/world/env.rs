@@ -72,6 +72,57 @@ pub struct SkyDome;
 #[derive(Component)]
 pub struct MoonBody;
 
+#[derive(Component)]
+pub struct SunBody;
+
+fn generate_sun_corona_texture() -> Image {
+    let width = 256;
+    let height = 256;
+    let center = 128.0f32;
+    let mut data = vec![0u8; width * height * 4];
+
+    for y in 0..height {
+        for x in 0..width {
+            let fx = x as f32 - center;
+            let fy = y as f32 - center;
+            let dist = (fx * fx + fy * fy).sqrt();
+
+            let norm_d = dist / center;
+            let mut alpha = 0.0f32;
+            let r = 255.0f32;
+            let mut g = 210.0f32;
+            let mut b = 120.0f32;
+
+            if norm_d <= 1.0 {
+                alpha = (1.0 - norm_d).powf(1.8) * 0.9;
+                let flare = (norm_d * 24.0 + (fx.atan2(fy) * 8.0).sin() * 0.5).sin();
+                if flare > 0.3 {
+                    g = (g * 1.2).min(255.0);
+                    b = (b * 1.3).min(255.0);
+                }
+            }
+
+            let idx = (y * width + x) * 4;
+            data[idx] = r as u8;
+            data[idx + 1] = g as u8;
+            data[idx + 2] = b as u8;
+            data[idx + 3] = (alpha * 255.0).clamp(0.0, 255.0) as u8;
+        }
+    }
+
+    Image::new_fill(
+        bevy::render::render_resource::Extent3d {
+            width: width as u32,
+            height: height as u32,
+            depth_or_array_layers: 1,
+        },
+        bevy::render::render_resource::TextureDimension::D2,
+        &data,
+        bevy::render::render_resource::TextureFormat::Rgba8UnormSrgb,
+        bevy::asset::RenderAssetUsages::RENDER_WORLD | bevy::asset::RenderAssetUsages::MAIN_WORLD,
+    )
+}
+
 fn generate_moon_crater_texture() -> Image {
     let width = 256;
     let height = 256;
@@ -273,6 +324,47 @@ fn setup_sky_dome(
                 Transform::from_rotation(Quat::from_euler(EulerRot::XYZ, 0.65, 0.2, 0.4)),
             ));
         });
+
+    // Spawn 3D Golden Sun Body with Solar Corona Flare Disk
+    let corona_image = generate_sun_corona_texture();
+    let corona_handle = images.add(corona_image);
+
+    let sun_sphere_mesh = meshes.add(Sphere::new(35.0).mesh().ico(5).unwrap());
+    let sun_corona_mesh = meshes.add(Plane3d::default().mesh().size(160.0, 160.0));
+
+    let sun_material = standard_materials.add(StandardMaterial {
+        base_color: Color::srgb(1.0, 0.85, 0.35),
+        emissive: LinearRgba::from(Color::srgb(3.5, 2.5, 0.8)),
+        perceptual_roughness: 0.1,
+        unlit: true,
+        ..default()
+    });
+
+    let corona_material = standard_materials.add(StandardMaterial {
+        base_color_texture: Some(corona_handle),
+        emissive: LinearRgba::from(Color::srgb(3.0, 2.2, 0.6)),
+        alpha_mode: AlphaMode::Blend,
+        cull_mode: None,
+        unlit: true,
+        ..default()
+    });
+
+    commands
+        .spawn((
+            Name::new("SunBody"),
+            SunBody,
+            Mesh3d(sun_sphere_mesh),
+            MeshMaterial3d(sun_material),
+            Transform::from_xyz(0.0, 600.0, 0.0),
+        ))
+        .with_children(|parent| {
+            parent.spawn((
+                Name::new("SunCorona"),
+                Mesh3d(sun_corona_mesh),
+                MeshMaterial3d(corona_material),
+                Transform::from_rotation(Quat::from_rotation_x(std::f32::consts::FRAC_PI_2)),
+            ));
+        });
 }
 
 fn update_time(time: Res<Time>, mut time_of_day: ResMut<TimeOfDay>) {
@@ -321,15 +413,7 @@ fn update_sun(
         >,
     >,
     mut light_query: Query<(&mut DirectionalLight, Option<&Sun>, Option<&Moon>)>,
-    player_query: Option<
-        Single<
-            &Transform,
-            (
-                With<crate::player::camera::Player>,
-                Without<Sun>,
-            ),
-        >,
-    >,
+    player_query: Option<Single<&Transform, (With<crate::player::camera::Player>, Without<Sun>)>>,
     mut ambient_light: ResMut<GlobalAmbientLight>,
 ) {
     let angle = (time_of_day.hour / 24.0) * 2.0 * PI - PI / 2.0;
@@ -482,6 +566,17 @@ fn update_sky_dome(
             ),
         >,
     >,
+    sun_body_query: Option<
+        Single<
+            &mut Transform,
+            (
+                With<SunBody>,
+                Without<SkyDome>,
+                Without<MoonBody>,
+                Without<crate::player::camera::Player>,
+            ),
+        >,
+    >,
 ) {
     // Center sky dome on player
     let Some(player_transform) = player_query else {
@@ -496,13 +591,21 @@ fn update_sky_dome(
     sky_dome_transform.scale = Vec3::splat(-1.0);
 
     // Orbit 3D Ringed Moon around player along celestial arc
+    let angle = (time_of_day.hour / 24.0) * 2.0 * PI - PI / 2.0;
     if let Some(mut moon_transform) = moon_body_query {
-        let angle = (time_of_day.hour / 24.0) * 2.0 * PI - PI / 2.0;
         let moon_angle = angle + PI;
         let moon_dir = Vec3::new(0.0, moon_angle.sin(), moon_angle.cos()).normalize();
 
         moon_transform.translation = player_transform.translation + moon_dir * 600.0;
         moon_transform.rotation = Quat::from_rotation_y(time.elapsed_secs() * 0.03);
+    }
+
+    // Orbit 3D Golden Sun & Solar Corona around player along celestial arc
+    if let Some(mut sun_transform) = sun_body_query {
+        let sun_dir = Vec3::new(0.0, angle.sin(), angle.cos()).normalize();
+
+        sun_transform.translation = player_transform.translation + sun_dir * 600.0;
+        sun_transform.rotation = Quat::from_rotation_y(time.elapsed_secs() * 0.02);
     }
 
     // Update uniforms
