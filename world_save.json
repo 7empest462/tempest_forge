@@ -59,13 +59,13 @@
       "has_axe": false,
       "has_pickaxe": false,
       "armor_tier": "None",
-      "has_sword": false,
+      "has_sword": true,
       "has_iron_pickaxe": false,
       "has_gold_pickaxe": false,
       "has_iron_axe": false,
       "has_gold_axe": false,
       "has_iron_sword": false,
-      "has_gold_sword": false
+      "has_gold_sword": true
     }
   },
   "world": {
