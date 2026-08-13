@@ -1538,7 +1538,9 @@ fn update_dripping(
     for (entity, transform, mut dripping) in dripping_query.iter_mut() {
         dripping.timer.tick(time.delta());
         if dripping.timer.just_finished() {
-            commands.entity(entity).remove::<Dripping>();
+            if let Ok(mut entity_cmd) = commands.get_entity(entity) {
+                entity_cmd.remove::<Dripping>();
+            }
         } else {
             // Spawn dripping droplets falling from the body (1-2 droplets per frame)
             let spawn_count = rng.random_range(1..=2);
