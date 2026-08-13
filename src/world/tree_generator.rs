@@ -115,6 +115,7 @@ pub fn chunk_vegetation_system(
 
         let mut spawn_count = 0;
         let mut rng = FastRng::with_seed((chunk_key.x as u64) << 32 | (chunk_key.z as u64));
+        let mut spawned_positions: Vec<IVec3> = Vec::new();
 
         for i in 0..20 {
             if is_settlement_chunk {
@@ -125,6 +126,16 @@ pub fn chunk_vegetation_system(
             let z = rng.i32(0..32);
             let world_x = (chunk_key.x * 32) + x;
             let world_z = (chunk_key.z * 32) + z;
+
+            // Enforce minimum 6.0m spacing between trees and mushrooms
+            let pos_2d = Vec2::new(world_x as f32, world_z as f32);
+            let too_close = spawned_positions.iter().any(|prev_pos| {
+                let prev_2d = Vec2::new(prev_pos.x as f32, prev_pos.z as f32);
+                pos_2d.distance_squared(prev_2d) < 36.0 // 6.0m minimum spacing
+            });
+            if too_close {
+                continue;
+            }
 
             let terrain = noise_gen.get_terrain(world_x as f32, world_z as f32);
             let adjusted_surface =
@@ -181,9 +192,10 @@ pub fn chunk_vegetation_system(
             if adjusted_surface > min_height && adjusted_surface < 120.0 && !terrain.is_desert {
                 let pos = IVec3::new(world_x, surface_y, world_z);
 
-                // Spawn the tree task
+                // Spawn the tree task with spatial grove clustering
                 let tree_type = if world_x >= 5000 {
-                    if i % 2 == 0 {
+                    let grove_val = noise_gen.get_flora(world_x as f32 * 0.05, world_z as f32 * 0.05);
+                    if grove_val > 0.0 {
                         TreeType::Mushroom
                     } else {
                         TreeType::Jungle
@@ -201,6 +213,7 @@ pub fn chunk_vegetation_system(
                         pos, adjusted_surface
                     );
                 }
+                spawned_positions.push(pos);
                 commands.spawn(TreeSpawnRequest { pos, tree_type });
                 spawn_count += 1;
             } else {

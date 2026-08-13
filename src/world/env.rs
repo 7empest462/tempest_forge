@@ -167,8 +167,8 @@ fn update_sun(
             ambient_light.color = Color::srgb(0.9, 0.95, 1.0);
             ambient_light.brightness = (120.0 + sun_height * 300.0).clamp(80.0, 420.0);
         } else {
-            ambient_light.color = Color::srgb(0.2, 0.3, 0.5);
-            ambient_light.brightness = 40.0;
+            ambient_light.color = Color::srgb(0.35, 0.45, 0.65);
+            ambient_light.brightness = 350.0;
         }
     }
 
@@ -224,8 +224,8 @@ fn update_sun(
                 }
             } else if moon.is_some() {
                 let moon_height = (angle + PI).sin();
-                light.illuminance = (moon_height.max(0.0) * 1000.0).clamp(0.0, 1000.0);
-                light.color = Color::srgb(0.8, 0.8, 1.0);
+                light.illuminance = (moon_height.max(0.0) * 8000.0).clamp(0.0, 8000.0);
+                light.color = Color::srgb(0.8, 0.85, 1.0);
             }
         }
     }
