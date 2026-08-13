@@ -105,7 +105,7 @@ pub fn chunk_vegetation_system(
             (chunk_key.x.wrapping_mul(73856093) ^ chunk_key.z.wrapping_mul(19349663)).abs();
         let is_settlement_chunk = (chunk_hash % 10) == 0 && (chunk_key.x != 0 || chunk_key.z != 0);
 
-        if chunk_key.x >= 312 {
+        if chunk_key.x >= 156 {
             info!(
                 "[VEGETATION] Processing alien chunk {:?} is_settlement_chunk={}",
                 chunk_key, is_settlement_chunk
@@ -120,10 +120,10 @@ pub fn chunk_vegetation_system(
                 continue;
             } // Clear the entire settlement chunk of trees
 
-            let x = rng.i32(0..16);
-            let z = rng.i32(0..16);
-            let world_x = (chunk_key.x * 16) + x;
-            let world_z = (chunk_key.z * 16) + z;
+            let x = rng.i32(0..32);
+            let z = rng.i32(0..32);
+            let world_x = (chunk_key.x * 32) + x;
+            let world_z = (chunk_key.z * 32) + z;
 
             let terrain = noise_gen.get_terrain(world_x as f32, world_z as f32);
             let adjusted_surface =
@@ -139,9 +139,9 @@ pub fn chunk_vegetation_system(
 
             // 1. Vertical Filtering: Only spawn if the surface belongs to THIS vertical chunk
             let surface_y = adjusted_surface.floor() as i32;
-            let chunk_y = (surface_y as f32 / 16.0).floor() as i32;
+            let chunk_y = (surface_y as f32 / 32.0).floor() as i32;
             if chunk_y != chunk_key.y {
-                if chunk_key.x >= 312 && i == 0 {
+                if chunk_key.x >= 156 && i == 0 {
                     info!(
                         "[VEGETATION] Alien chunk skip: chunk_y={} != chunk_key.y={} (surface_y={})",
                         chunk_y, chunk_key.y, surface_y
@@ -166,7 +166,7 @@ pub fn chunk_vegetation_system(
             };
 
             if i >= density_limit {
-                if chunk_key.x >= 312 && i == 0 {
+                if chunk_key.x >= 156 && i == 0 {
                     info!(
                         "[VEGETATION] Alien chunk skip: i={} >= density_limit={} (flora_val={:.3})",
                         i, density_limit, flora_val
@@ -195,7 +195,7 @@ pub fn chunk_vegetation_system(
                 commands.spawn(TreeSpawnRequest { pos, tree_type });
                 spawn_count += 1;
             } else {
-                if chunk_key.x >= 312 && i == 0 {
+                if chunk_key.x >= 156 && i == 0 {
                     info!(
                         "[VEGETATION] Alien chunk skip suitability: surface={:.1}, desert={}",
                         adjusted_surface, terrain.is_desert
@@ -605,13 +605,13 @@ fn pick_grass_tree(rng: &mut FastRng) -> Option<TreeType> {
 }
 
 fn scatter_candidates(chunk_2d: IVec3, count: usize, rng: &mut FastRng) -> Vec<IVec2> {
-    let base_x = chunk_2d.x * 16;
-    let base_z = chunk_2d.z * 16;
-    let cell = 16 / count.max(1) as i32;
+    let base_x = chunk_2d.x * 32;
+    let base_z = chunk_2d.z * 32;
+    let cell = 32 / count.max(1) as i32;
     (0..count)
         .map(|i| {
             let cx = base_x + (i as i32) * cell + rng.i32(0..cell.max(1));
-            let cz = base_z + rng.i32(0..16);
+            let cz = base_z + rng.i32(0..32);
             IVec2::new(cx, cz)
         })
         .collect()
