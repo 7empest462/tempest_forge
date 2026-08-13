@@ -31,13 +31,15 @@ pub struct SkyMaterial {
     #[uniform(0)]
     pub color: Vec4,
     #[uniform(0)]
+    pub sun_dir: Vec4,
+    #[uniform(0)]
     pub time: f32,
     #[uniform(0)]
     pub cloudiness: f32,
     #[uniform(0)]
     pub is_alien: f32,
     #[uniform(0)]
-    pub sun_dir: Vec4,
+    pub _padding: f32,
 }
 
 impl Material for SkyMaterial {
@@ -271,10 +273,11 @@ fn setup_sky_dome(
 
     let sky_material = sky_materials.add(SkyMaterial {
         color: Vec4::new(0.4, 0.6, 1.0, 1.0),
+        sun_dir: Vec4::new(0.0, 1.0, 0.0, 0.0),
         time: 0.0,
         cloudiness: 0.0,
         is_alien: 0.0,
-        sun_dir: Vec4::new(0.0, 1.0, 0.0, 0.0),
+        _padding: 0.0,
     });
 
     commands.spawn((

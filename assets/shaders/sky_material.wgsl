@@ -4,10 +4,11 @@
 
 struct SkyMaterial {
     color: vec4<f32>,
+    sun_dir: vec4<f32>,
     time: f32,
     cloudiness: f32,
     is_alien: f32,
-    sun_dir: vec4<f32>,
+    _padding: f32,
 };
 
 @group(3) @binding(0) var<uniform> material: SkyMaterial;
