@@ -22,6 +22,7 @@ fn portal_teleportation_system(
     mut current_dim: ResMut<CurrentDimension>,
     mut ambient_light: ResMut<GlobalAmbientLight>,
     time: Res<Time>,
+    keys: Res<ButtonInput<KeyCode>>,
     mut cooldown: Local<f32>,
     noise_generator: Res<crate::world::noise_generator::NoiseGenerator>,
 ) {
@@ -39,16 +40,19 @@ fn portal_teleportation_system(
         .get_adjusted_surface_height(10000.0, 10050.0)
         .round();
 
+    let interact_pressed = keys.just_pressed(KeyCode::KeyE);
+
     match *current_dim {
         CurrentDimension::Normal => {
             // Normal portal is at Vec3(0.0, 42.0, 50.0)
             let portal_pos = Vec3::new(0.0, 42.0, 50.0);
-            if pos.distance(portal_pos) < 2.5 {
+            let dist = pos.distance(portal_pos);
+            if dist < 1.5 || (dist < 3.5 && interact_pressed) {
                 // Teleport to Alien dimension
                 info!("Teleporting to Alien Dimension!");
-                player_transform.translation = Vec3::new(10000.0, alien_portal_y + 3.0, 10045.0);
+                player_transform.translation = Vec3::new(10000.0, alien_portal_y + 3.0, 10035.0);
                 *current_dim = CurrentDimension::Alien;
-                *cooldown = 4.0; // 4 seconds cooldown to allow chunks to load without immediately triggering back
+                *cooldown = 4.0; // 4 seconds cooldown to allow chunks to load
 
                 // Set alien ambient light
                 ambient_light.color = Color::srgb(0.4, 0.2, 0.6);
@@ -58,10 +62,11 @@ fn portal_teleportation_system(
         CurrentDimension::Alien => {
             // Alien portal is at Vec3(10000.0, alien_portal_y, 10050.0)
             let portal_pos = Vec3::new(10000.0, alien_portal_y, 10050.0);
-            if pos.distance(portal_pos) < 2.5 {
+            let dist = pos.distance(portal_pos);
+            if dist < 1.5 || (dist < 3.5 && interact_pressed) {
                 // Teleport back to Normal dimension
                 info!("Teleporting back to Normal Dimension!");
-                player_transform.translation = Vec3::new(0.0, 45.0, 45.0);
+                player_transform.translation = Vec3::new(0.0, 45.0, 40.0);
                 *current_dim = CurrentDimension::Normal;
                 *cooldown = 4.0;
 

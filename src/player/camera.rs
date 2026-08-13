@@ -1092,7 +1092,7 @@ fn camera_toggle(
     gamepads: Query<&Gamepad>,
     recoil: Res<crate::player::combat::RecoilState>,
 ) {
-    let Ok((player_transform, mut mode, mut physics)) = query.single_mut() else {
+    let Ok((_player_transform, mut mode, mut physics)) = query.single_mut() else {
         return;
     };
     let Ok((mut cam_transform, _proj, mut pan_orbit_opt)) = camera_query.single_mut() else {
@@ -1138,8 +1138,8 @@ fn camera_toggle(
         if *mode == CameraMode::Orbit {
             if !pan_orbit.enabled {
                 pan_orbit.enabled = true;
-                pan_orbit.target_focus = player_transform.translation + Vec3::Y * 1.5;
             }
+            pan_orbit.target_focus = Vec3::Y * 1.5;
         } else {
             pan_orbit.enabled = false;
         }
