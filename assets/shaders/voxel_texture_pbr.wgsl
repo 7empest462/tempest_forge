@@ -190,22 +190,25 @@ fn fragment(
     pbr_input.material.metallic = orm.b;
     pbr_input.diffuse_occlusion = vec3<f32>(orm.r);
 
-    // Apply custom emissive and dielectric properties for alien blocks
+    // Apply custom emissive and dielectric properties for alien blocks (indices 14u to 18u)
+    if texture_idx >= 14u {
+        pbr_input.diffuse_occlusion = vec3<f32>(1.0);
+        pbr_input.material.metallic = 0.0;
+    }
+
     if texture_idx == 16u {
         // Glowing Moss: bio-luminescent emerald green glow
         let moss_glow = vec4<f32>(0.1, 0.85, 0.45, 1.0);
-        pbr_input.material.emissive = (pbr_input.material.base_color * 0.8 + moss_glow * 0.4) * 1.5;
+        pbr_input.material.emissive = (pbr_input.material.base_color * 0.8 + moss_glow * 0.4) * 1.8;
     } else if texture_idx == 17u {
         // Alien Crystal: vibrant cyan crystalline glow (dielectric, non-metallic for full ambient illumination)
         let crystal_glow = vec4<f32>(0.2, 0.7, 1.2, 1.0);
-        pbr_input.material.emissive = (pbr_input.material.base_color * 1.5 + crystal_glow * 0.8) * 3.0;
-        pbr_input.material.metallic = 0.05;
+        pbr_input.material.emissive = (pbr_input.material.base_color * 1.5 + crystal_glow * 0.8) * 3.5;
         pbr_input.material.perceptual_roughness = 0.15;
     } else if texture_idx == 18u {
         // Floating Crystal: brilliant magenta/purple pulse (dielectric, non-metallic for full ambient illumination)
         let crystal_glow = vec4<f32>(0.9, 0.3, 1.3, 1.0);
-        pbr_input.material.emissive = (pbr_input.material.base_color * 1.8 + crystal_glow * 1.0) * 3.5;
-        pbr_input.material.metallic = 0.05;
+        pbr_input.material.emissive = (pbr_input.material.base_color * 2.0 + crystal_glow * 1.5) * 4.0;
         pbr_input.material.perceptual_roughness = 0.1;
     }
 

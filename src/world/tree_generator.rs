@@ -33,10 +33,11 @@ use bevy_procedural_tree::settings::{
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub enum TreeType {
-    Oak,    // wide rounded crown, thick trunk
-    Pine,   // tall narrow cone, sparse leaves
-    Birch,  // medium height, wispy crown
-    Jungle, // very tall, thin trunk, large flat canopy
+    Oak,      // wide rounded crown, thick trunk
+    Pine,     // tall narrow cone, sparse leaves
+    Birch,    // medium height, wispy crown
+    Jungle,   // very tall, thin trunk, large flat canopy
+    Mushroom, // Giant bioluminescent mushroom with wide umbrella cap
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -181,7 +182,13 @@ pub fn chunk_vegetation_system(
                 let pos = IVec3::new(world_x, surface_y, world_z);
 
                 // Spawn the tree task
-                let tree_type = if flora_val > 0.6 {
+                let tree_type = if world_x >= 5000 {
+                    if i % 2 == 0 {
+                        TreeType::Mushroom
+                    } else {
+                        TreeType::Jungle
+                    }
+                } else if flora_val > 0.6 {
                     TreeType::Jungle // Deep forest has bigger trees
                 } else if i % 5 == 0 {
                     TreeType::Oak
@@ -360,7 +367,7 @@ pub fn complete_tree_generation(
     for (entity, mut task_comp) in tasks.iter_mut() {
         if let Some(result) = future::block_on(future::poll_once(&mut task_comp.task)) {
             let is_alien = result.pos.x >= 5000;
-            let is_mushroom = is_alien && ((result.pos.x + result.pos.z) % 2 == 0);
+            let is_mushroom = matches!(result._tree_type, TreeType::Mushroom);
 
             let (bark_mat, leaf_mat) = if is_alien {
                 if is_mushroom {
@@ -436,6 +443,17 @@ pub fn complete_tree_generation(
 // ─────────────────────────────────────────────────────────────────────────────
 
 fn generate_tree_data(base_pos: IVec3, tree_type: TreeType) -> TreeGenerationResult {
+    if tree_type == TreeType::Mushroom {
+        let stalk_mesh = Mesh::from(Cylinder::new(0.45, 4.5));
+        let cap_mesh = Mesh::from(Cone::new(3.0, 1.2));
+        return TreeGenerationResult {
+            pos: base_pos,
+            _tree_type: tree_type,
+            branch_mesh: stalk_mesh,
+            leaf_mesh: cap_mesh,
+        };
+    }
+
     // 1. Shrubbery Voxel Trunk Generation
     let (
         crown_w,
@@ -451,7 +469,7 @@ fn generate_tree_data(base_pos: IVec3, tree_type: TreeType) -> TreeGenerationRes
         TreeType::Oak => (9.0, 7.0, 6.0, 0.6, 5.5, 0.5, 3.0, 14, 0.55),
         TreeType::Pine => (4.0, 10.0, 8.0, 0.5, 4.5, 0.45, 5.0, 10, 0.4),
         TreeType::Birch => (6.0, 6.0, 5.0, 0.55, 5.0, 0.5, 2.5, 12, 0.45),
-        TreeType::Jungle => (12.0, 5.0, 10.0, 0.65, 6.0, 0.55, 7.0, 16, 0.5),
+        TreeType::Jungle | TreeType::Mushroom => (12.0, 5.0, 10.0, 0.65, 6.0, 0.55, 7.0, 16, 0.5),
     };
 
     let seed = (base_pos.x.unsigned_abs() as u64).wrapping_mul(2654435761)
@@ -562,7 +580,7 @@ fn generate_tree_data(base_pos: IVec3, tree_type: TreeType) -> TreeGenerationRes
                 ..default()
             },
         },
-        TreeType::Jungle => TreeMeshSettings {
+        TreeType::Jungle | TreeType::Mushroom => TreeMeshSettings {
             tree_type: ProcTreeType::Deciduous,
             branch: BranchParams {
                 levels: BranchRecursionLevel::Three,

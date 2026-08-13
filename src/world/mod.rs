@@ -110,7 +110,7 @@ impl Plugin for WorldPlugin {
             .add_plugins(
                 VoxelWorldPlugin::with_config(noise_generator::NoiseGenerator::new(
                     fastrand::u32(..),
-                    14,
+                    8,
                 ))
                 .with_material(material),
             )
