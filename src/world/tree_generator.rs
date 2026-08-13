@@ -31,7 +31,7 @@ use bevy_procedural_tree::settings::{
 // Tree type enum — controls colonization & leaf parameters per biome
 // ─────────────────────────────────────────────────────────────────────────────
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub enum TreeType {
     Oak,    // wide rounded crown, thick trunk
     Pine,   // tall narrow cone, sparse leaves
@@ -299,70 +299,106 @@ pub fn start_tree_generation(mut commands: Commands, requests: Query<(Entity, &T
     }
 }
 
+#[derive(Default)]
+pub struct TreeMaterialsCache {
+    pub normal_bark: Option<Handle<StandardMaterial>>,
+    pub normal_leaf: Option<Handle<StandardMaterial>>,
+    pub mushroom_stalk: Option<Handle<StandardMaterial>>,
+    pub mushroom_cap: Option<Handle<StandardMaterial>>,
+    pub alien_trunk: Option<Handle<StandardMaterial>>,
+    pub alien_leaf: Option<Handle<StandardMaterial>>,
+}
+
 pub fn complete_tree_generation(
     mut commands: Commands,
     mut tasks: Query<(Entity, &mut TreeGenerationTask)>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut mat_cache: Local<TreeMaterialsCache>,
+    mut mesh_cache: Local<
+        rustc_hash::FxHashMap<(TreeType, bool, u32), (Handle<Mesh>, Handle<Mesh>)>,
+    >,
 ) {
+    if mat_cache.normal_bark.is_none() {
+        mat_cache.normal_bark = Some(materials.add(StandardMaterial {
+            base_color: Color::srgb(0.4, 0.25, 0.1),
+            perceptual_roughness: 0.9,
+            ..default()
+        }));
+        mat_cache.normal_leaf = Some(materials.add(StandardMaterial {
+            base_color: Color::srgb(0.1, 0.5, 0.1),
+            ..default()
+        }));
+        mat_cache.mushroom_stalk = Some(materials.add(StandardMaterial {
+            base_color: Color::srgb(0.8, 0.7, 0.9),
+            emissive: LinearRgba::from(Color::srgb(0.2, 0.1, 0.3)),
+            perceptual_roughness: 0.6,
+            ..default()
+        }));
+        mat_cache.mushroom_cap = Some(materials.add(StandardMaterial {
+            base_color: Color::srgb(0.9, 0.1, 0.6),
+            emissive: LinearRgba::from(Color::srgb(0.8, 0.1, 0.5)),
+            perceptual_roughness: 0.5,
+            ..default()
+        }));
+        mat_cache.alien_trunk = Some(materials.add(StandardMaterial {
+            base_color: Color::srgb(0.15, 0.1, 0.25),
+            emissive: LinearRgba::from(Color::srgb(0.05, 0.02, 0.1)),
+            perceptual_roughness: 0.8,
+            ..default()
+        }));
+        mat_cache.alien_leaf = Some(materials.add(StandardMaterial {
+            base_color: Color::srgb(0.0, 0.8, 0.9),
+            emissive: LinearRgba::from(Color::srgb(0.0, 0.7, 0.8)),
+            perceptual_roughness: 0.4,
+            ..default()
+        }));
+    }
+
     for (entity, mut task_comp) in tasks.iter_mut() {
         if let Some(result) = future::block_on(future::poll_once(&mut task_comp.task)) {
-            let (bark_mat, leaf_mat) = if result.pos.x >= 5000 {
-                // Alien dimension materials: glowing cyan/magenta mushrooms & trees!
-                let is_mushroom = (result.pos.x + result.pos.z) % 2 == 0;
+            let is_alien = result.pos.x >= 5000;
+            let is_mushroom = is_alien && ((result.pos.x + result.pos.z) % 2 == 0);
+
+            let (bark_mat, leaf_mat) = if is_alien {
                 if is_mushroom {
-                    // Glowing Mushroom
                     (
-                        materials.add(StandardMaterial {
-                            base_color: Color::srgb(0.8, 0.7, 0.9), // Pale purple stalk
-                            emissive: LinearRgba::from(Color::srgb(0.2, 0.1, 0.3)),
-                            perceptual_roughness: 0.6,
-                            ..default()
-                        }),
-                        materials.add(StandardMaterial {
-                            base_color: Color::srgb(0.9, 0.1, 0.6), // Magenta cap
-                            emissive: LinearRgba::from(Color::srgb(0.8, 0.1, 0.5)), // Strong glow!
-                            perceptual_roughness: 0.5,
-                            ..default()
-                        }),
+                        mat_cache.mushroom_stalk.clone().unwrap(),
+                        mat_cache.mushroom_cap.clone().unwrap(),
                     )
                 } else {
-                    // Glowing Tree
                     (
-                        materials.add(StandardMaterial {
-                            base_color: Color::srgb(0.15, 0.1, 0.25), // Dark purple trunk
-                            emissive: LinearRgba::from(Color::srgb(0.05, 0.02, 0.1)),
-                            perceptual_roughness: 0.8,
-                            ..default()
-                        }),
-                        materials.add(StandardMaterial {
-                            base_color: Color::srgb(0.0, 0.8, 0.9), // Neon cyan leaves
-                            emissive: LinearRgba::from(Color::srgb(0.0, 0.7, 0.8)), // Glowing cyan!
-                            perceptual_roughness: 0.4,
-                            ..default()
-                        }),
+                        mat_cache.alien_trunk.clone().unwrap(),
+                        mat_cache.alien_leaf.clone().unwrap(),
                     )
                 }
             } else {
-                // Normal world materials
                 (
-                    materials.add(StandardMaterial {
-                        base_color: Color::srgb(0.4, 0.25, 0.1), // Brown bark
-                        perceptual_roughness: 0.9,
-                        ..default()
-                    }),
-                    materials.add(StandardMaterial {
-                        base_color: Color::srgb(0.1, 0.5, 0.1), // Forest green
-                        ..default()
-                    }),
+                    mat_cache.normal_bark.clone().unwrap(),
+                    mat_cache.normal_leaf.clone().unwrap(),
                 )
             };
-            let branch_mesh_handle = meshes.add(result.branch_mesh);
-            let leaf_mesh_handle = meshes.add(result.leaf_mesh);
+
+            let variant_key = (
+                result._tree_type,
+                is_alien,
+                (result.pos.x.unsigned_abs() ^ result.pos.z.unsigned_abs()) % 8,
+            );
+
+            let (branch_mesh_handle, leaf_mesh_handle) = mesh_cache
+                .entry(variant_key)
+                .or_insert_with(|| {
+                    (
+                        meshes.add(result.branch_mesh),
+                        meshes.add(result.leaf_mesh),
+                    )
+                })
+                .clone();
+
             trace!(
                 "[VEGETATION] Spawning tree at {:?} (is_alien={})",
                 result.pos,
-                result.pos.x >= 5000
+                is_alien
             );
 
             // Spawn mesh canopy
@@ -617,7 +653,7 @@ pub fn despawn_trees_near_buildings(
     new_trees: Query<(Entity, &Transform), (Added<TreeEntity>, With<TreeEntity>)>,
     all_trees: Query<(Entity, &Transform), With<TreeEntity>>,
 ) {
-    let mut trees_to_despawn = std::collections::HashSet::new();
+    let mut trees_to_despawn = rustc_hash::FxHashSet::default();
 
     // Case 1: New building spawned, despawn any nearby existing trees
     for b in new_buildings.iter() {

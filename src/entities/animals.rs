@@ -53,6 +53,7 @@ fn spawn_animals(
     mut materials: ResMut<Assets<StandardMaterial>>,
     time_of_day: Res<TimeOfDay>,
     asset_server: Res<AssetServer>,
+    mut mat_cache: Local<rustc_hash::FxHashMap<[u8; 3], Handle<StandardMaterial>>>,
 ) {
     if animal_query.iter().count() >= 25 {
         return;
@@ -241,14 +242,20 @@ fn spawn_animals(
                             .with_scale(Vec3::splat(size)),
                     ));
                 } else if species == Species::Skeleton {
+                    let skel_mat = mat_cache
+                        .entry([230, 230, 230])
+                        .or_insert_with(|| {
+                            materials.add(StandardMaterial {
+                                base_color: Color::srgb(0.9, 0.9, 0.9),
+                                ..default()
+                            })
+                        })
+                        .clone();
                     // Humanoid Skeleton Model
                     // Torso
                     parent.spawn((
                         Mesh3d(meshes.add(Cuboid::new(0.3, 0.7, 0.2))),
-                        MeshMaterial3d(materials.add(StandardMaterial {
-                            base_color: Color::srgb(0.9, 0.9, 0.9),
-                            ..default()
-                        })),
+                        MeshMaterial3d(skel_mat.clone()),
                         Transform::from_xyz(0.0, 0.1, 0.0),
                     ));
                     // Head
